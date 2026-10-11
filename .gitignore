@@ -1,0 +1,14 @@
+.env
+.budget.json
+models/
+data/raw/
+data/silver/*.partial.jsonl
+eval/results/*.png
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.vscode/
+.idea/
+.DS_Store
+scratchpad/

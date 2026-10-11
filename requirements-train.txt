@@ -1,0 +1,7 @@
+# Kaggle / GPU only (Milestone 3)
+torch>=2.3
+transformers>=4.44
+datasets>=3.0
+accelerate>=0.33
+optimum[onnxruntime]>=1.22
+evaluate>=0.4
