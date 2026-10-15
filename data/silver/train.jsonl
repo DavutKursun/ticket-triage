@@ -20,3 +20,33 @@
 {"id": "57d3eff57514", "urgency": "low", "sentiment": "neutral", "reason": "Customer wants to know cancellation fees", "model": "openai/gpt-oss-120b", "prompt_version": "2026-10-11.2"}
 {"id": "f0a9cdb17119", "urgency": "low", "sentiment": "neutral", "reason": "requesting customer service phone number", "model": "openai/gpt-oss-120b", "prompt_version": "2026-10-11.2"}
 {"id": "7cce73b31e47", "urgency": "low", "sentiment": "neutral", "reason": "User asks how to report payment problems", "model": "openai/gpt-oss-120b", "prompt_version": "2026-10-11.2"}
+{"id": "95d35f473896", "urgency": "low", "sentiment": "neutral", "reason": "requesting information on withdrawal charges", "model": "openai/gpt-oss-120b", "prompt_version": "2026-10-11.2"}
+{"id": "445be5937187", "urgency": "low", "sentiment": "neutral", "reason": "User asks how to subscribe to the newsletter", "model": "openai/gpt-oss-120b", "prompt_version": "2026-10-11.2"}
+{"id": "6c57b96bf6c1", "urgency": "low", "sentiment": "neutral", "reason": "Customer wants to know how to check cancellation penalties", "model": "openai/gpt-oss-120b", "prompt_version": "2026-10-11.2"}
+{"id": "5d00804d374a", "urgency": "low", "sentiment": "neutral", "reason": "User requests assistance locating invoices", "model": "openai/gpt-oss-120b", "prompt_version": "2026-10-11.2"}
+{"id": "287117f4c84f", "urgency": "low", "sentiment": "neutral", "reason": "Customer requests a new platinum account", "model": "openai/gpt-oss-120b", "prompt_version": "2026-10-11.2"}
+{"id": "12e4431769e0", "urgency": "low", "sentiment": "neutral", "reason": "Customer asks about refund policy circumstances", "model": "openai/gpt-oss-120b", "prompt_version": "2026-10-11.2"}
+{"id": "b64aa188dc7c", "urgency": "low", "sentiment": "neutral", "reason": "requesting payment information", "model": "openai/gpt-oss-120b", "prompt_version": "2026-10-11.2"}
+{"id": "4ea95ee02e36", "urgency": "low", "sentiment": "neutral", "reason": "User requests to close their account", "model": "openai/gpt-oss-120b", "prompt_version": "2026-10-11.2"}
+{"id": "0bdf4a0df9e4", "urgency": "low", "sentiment": "neutral", "reason": "Customer asks about expected delivery time", "model": "openai/gpt-oss-120b", "prompt_version": "2026-10-11.2"}
+{"id": "f72522104b65", "urgency": "low", "sentiment": "neutral", "reason": "User requests to speak with customer assistance", "model": "openai/gpt-oss-120b", "prompt_version": "2026-10-11.2"}
+{"id": "384aa3b24aed", "urgency": "low", "sentiment": "neutral", "reason": "Customer asks where to find early termination charge information", "model": "openai/gpt-oss-120b", "prompt_version": "2026-10-11.2"}
+{"id": "a74aa38b4a47", "urgency": "low", "sentiment": "neutral", "reason": "Customer wants help subscribing to the newsletter", "model": "openai/gpt-oss-120b", "prompt_version": "2026-10-11.2"}
+{"id": "88824211b96d", "urgency": "low", "sentiment": "neutral", "reason": "Customer asks how to buy products", "model": "openai/gpt-oss-120b", "prompt_version": "2026-10-11.2"}
+{"id": "7c1f6cfcb141", "urgency": "low", "sentiment": "neutral", "reason": "Customer wants to download their invoice", "model": "openai/gpt-oss-120b", "prompt_version": "2026-10-11.2"}
+{"id": "8d5baf473993", "urgency": "low", "sentiment": "negative", "reason": "Customer expresses frustration while asking for a refund update", "model": "openai/gpt-oss-120b", "prompt_version": "2026-10-11.2"}
+{"id": "c5922eb4db97", "urgency": "low", "sentiment": "neutral", "reason": "User asks where to view invoices", "model": "openai/gpt-oss-120b", "prompt_version": "2026-10-11.2"}
+{"id": "5d918f67e783", "urgency": "low", "sentiment": "neutral", "reason": "User asks where to request a refund", "model": "openai/gpt-oss-120b", "prompt_version": "2026-10-11.2"}
+{"id": "ce0638f6c2b5", "urgency": "low", "sentiment": "neutral", "reason": "Customer asks for expected delivery time", "model": "openai/gpt-oss-120b", "prompt_version": "2026-10-11.2"}
+{"id": "d06b22f1b01f", "urgency": "low", "sentiment": "neutral", "reason": "Customer asks how to place an order", "model": "openai/gpt-oss-120b", "prompt_version": "2026-10-11.2"}
+{"id": "a3361127db17", "urgency": "low", "sentiment": "negative", "reason": "Customer angrily asks about payment methods", "model": "openai/gpt-oss-120b", "prompt_version": "2026-10-11.2"}
+{"id": "d41ccb601dea", "urgency": "low", "sentiment": "neutral", "reason": "Customer asks for information about shipping periods", "model": "openai/gpt-oss-120b", "prompt_version": "2026-10-11.2"}
+{"id": "de0d8f02b48b", "urgency": "low", "sentiment": "neutral", "reason": "requesting information on accepted payment methods", "model": "openai/gpt-oss-120b", "prompt_version": "2026-10-11.2"}
+{"id": "48aef4630dcf", "urgency": "low", "sentiment": "neutral", "reason": "User asks how to notify about payment problems", "model": "openai/gpt-oss-120b", "prompt_version": "2026-10-11.2"}
+{"id": "dc3a9541a293", "urgency": "low", "sentiment": "neutral", "reason": "Customer asks how to request a refund", "model": "openai/gpt-oss-120b", "prompt_version": "2026-10-11.2"}
+{"id": "f3f65eb29eb1", "urgency": "low", "sentiment": "neutral", "reason": "Customer wants information about termination charges", "model": "openai/gpt-oss-120b", "prompt_version": "2026-10-11.2"}
+{"id": "550d764cc5c3", "urgency": "low", "sentiment": "neutral", "reason": "User wants to remove an unused standard account", "model": "openai/gpt-oss-120b", "prompt_version": "2026-10-11.2"}
+{"id": "c7b0dd9e40c2", "urgency": "low", "sentiment": "neutral", "reason": "Customer asks where to find the reimbursement policy", "model": "openai/gpt-oss-120b", "prompt_version": "2026-10-11.2"}
+{"id": "9b5c8c7fdba8", "urgency": "low", "sentiment": "neutral", "reason": "Customer asks where to find early exit charge information", "model": "openai/gpt-oss-120b", "prompt_version": "2026-10-11.2"}
+{"id": "16f3e89d4c5f", "urgency": "low", "sentiment": "neutral", "reason": "request to view invoices", "model": "openai/gpt-oss-120b", "prompt_version": "2026-10-11.2"}
+{"id": "bab0d20d23fe", "urgency": "low", "sentiment": "neutral", "reason": "User asks to unsubscribe from corporate newsletter", "model": "openai/gpt-oss-120b", "prompt_version": "2026-10-11.2"}

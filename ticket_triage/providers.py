@@ -3,7 +3,9 @@
 * ``OpenAICompatProvider`` — any OpenAI-compatible chat API (Groq free tier by default).
   Uses JSON mode (``response_format={"type": "json_object"}``); the caller validates with
   Pydantic and retries once on failure. ``json_schema`` mode is opt-in (USE_JSON_SCHEMA=1)
-  because Groq corrupted multibyte UTF-8 with it in the invoice project.
+  because Groq corrupted multibyte UTF-8 with it in the invoice project. ``reasoning_effort``
+  (LLM_REASONING_EFFORT, default "low") is sent only when non-empty; it cuts hidden reasoning
+  tokens for gpt-oss, which otherwise dominate output-token usage on tiny JSON replies.
 * ``AnthropicProvider`` — ``client.messages.parse(output_format=Model)``; optional prompt
   caching of the system block (``cache=True``) for the few-shot engine.
 
@@ -67,7 +69,7 @@ def _wrap(exc: Exception) -> ProviderError:
 class OpenAICompatProvider:
     name = "openai_compat"
 
-    def __init__(self, api_key: str, base_url: str, client=None) -> None:
+    def __init__(self, api_key: str, base_url: str, client=None, reasoning_effort: str = "") -> None:
         if client is None:
             from openai import OpenAI
 
@@ -76,6 +78,7 @@ class OpenAICompatProvider:
             client = OpenAI(api_key=api_key, base_url=base_url, max_retries=2)
         self._client = client
         self._use_schema = os.environ.get("USE_JSON_SCHEMA", "0") == "1"
+        self._reasoning_effort = (reasoning_effort or "").strip()
 
     def complete(self, system: str, user: str, model: str, output_model: type[BaseModel], max_tokens: int = 300, cache: bool = False) -> LLMResult:
         messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
@@ -83,9 +86,12 @@ class OpenAICompatProvider:
             fmt = {"type": "json_schema", "json_schema": {"name": output_model.__name__.lower(), "schema": json_schema(output_model), "strict": True}}
         else:
             fmt = {"type": "json_object"}
+        kwargs = {"model": model, "messages": messages, "max_tokens": max_tokens, "temperature": 0, "response_format": fmt}
+        if self._reasoning_effort:
+            kwargs["reasoning_effort"] = self._reasoning_effort
         t0 = time.perf_counter()
         try:
-            resp = self._client.chat.completions.create(model=model, messages=messages, max_tokens=max_tokens, temperature=0, response_format=fmt)
+            resp = self._client.chat.completions.create(**kwargs)
         except Exception as exc:
             raise _wrap(exc) from exc
         elapsed = time.perf_counter() - t0
@@ -138,7 +144,8 @@ def get_provider(cfg) -> tuple[Provider, str]:
     if cfg.llm_provider == "openai_compat":
         if not cfg.llm_model:
             raise ProviderError("LLM_MODEL is not set (see .env.example)")
-        return OpenAICompatProvider(cfg.llm_api_key, cfg.llm_base_url), cfg.llm_model
+        # AnthropicProvider has no equivalent knob and ignores this setting.
+        return OpenAICompatProvider(cfg.llm_api_key, cfg.llm_base_url, reasoning_effort=getattr(cfg, "llm_reasoning_effort", "")), cfg.llm_model
     raise ProviderError(f"Unknown LLM_PROVIDER {cfg.llm_provider!r}")
 
 

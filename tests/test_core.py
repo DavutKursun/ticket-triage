@@ -8,7 +8,7 @@ from ticket_triage.baseline import BaselineEngine
 from ticket_triage.costs import BudgetGuard, cost_per_1000, format_cost
 from ticket_triage.data import dedupe_and_split, stable_id
 from ticket_triage.llm_engine import LLMEngine
-from ticket_triage.providers import QuotaError, _wrap, complete_validated, parse_json_loose
+from ticket_triage.providers import OpenAICompatProvider, QuotaError, _wrap, complete_validated, get_provider, parse_json_loose
 from ticket_triage.rubric import CATEGORY_DEFINITIONS, PROMPT_VERSION, TRIAGE_SYSTEM, few_shot_block
 from ticket_triage.schema import CATEGORIES, SilverLabel, Triage, json_schema
 
@@ -59,6 +59,37 @@ def test_quota_error_detected():
 
     assert isinstance(_wrap(E("Rate limit reached ... tokens per day (TPD)")), QuotaError)
     assert not isinstance(_wrap(E("Rate limit reached ... tokens per minute")), QuotaError)
+
+
+def _fake_openai_client(record: list):
+    """Minimal stand-in for openai.OpenAI: records create() kwargs, returns a JSON reply with usage."""
+    from types import SimpleNamespace as NS
+
+    def create(**kwargs):
+        record.append(kwargs)
+        return NS(choices=[NS(message=NS(content='{"urgency": "low", "sentiment": "neutral", "reason": "x"}'))],
+                  usage=NS(prompt_tokens=10, completion_tokens=5, prompt_tokens_details=None))
+
+    return NS(chat=NS(completions=NS(create=create)))
+
+
+def test_openai_compat_sends_reasoning_effort_only_when_set():
+    calls: list[dict] = []
+    p = OpenAICompatProvider("k", "http://localhost", client=_fake_openai_client(calls), reasoning_effort="low")
+    r = p.complete("s", "u", "m", SilverLabel)
+    assert calls[0]["reasoning_effort"] == "low" and calls[0]["response_format"] == {"type": "json_object"}
+    assert (r.input_tokens, r.output_tokens) == (10, 5)
+    calls.clear()
+    OpenAICompatProvider("k", "http://localhost", client=_fake_openai_client(calls), reasoning_effort="").complete("s", "u", "m", SilverLabel)
+    assert "reasoning_effort" not in calls[0]
+
+
+def test_get_provider_wires_reasoning_effort_from_settings():
+    from types import SimpleNamespace as NS
+
+    cfg = NS(llm_provider="openai_compat", llm_model="m", llm_api_key="k", llm_base_url="http://localhost", llm_reasoning_effort="medium")
+    provider, model = get_provider(cfg)
+    assert model == "m" and provider._reasoning_effort == "medium"
 
 
 # --- LLM engine -------------------------------------------------------------
