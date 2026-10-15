@@ -1,0 +1,22 @@
+{"id": "66061138d18d", "urgency": "medium", "sentiment": "neutral", "reason": "User needs assistance updating account information", "model": "openai/gpt-oss-120b", "prompt_version": "2026-10-11.2"}
+{"id": "c177d361f97d", "urgency": "low", "sentiment": "neutral", "reason": "User wants instructions on how to chat with an agent", "model": "openai/gpt-oss-120b", "prompt_version": "2026-10-11.2"}
+{"id": "a945c8608db2", "urgency": "low", "sentiment": "neutral", "reason": "Customer asks to see the early exit fee for cancellation", "model": "openai/gpt-oss-120b", "prompt_version": "2026-10-11.2"}
+{"id": "a461cbcd3850", "urgency": "low", "sentiment": "neutral", "reason": "User wants information on how to cancel the newsletter subscription", "model": "openai/gpt-oss-120b", "prompt_version": "2026-10-11.2"}
+{"id": "00cb73fd5a9b", "urgency": "medium", "sentiment": "neutral", "reason": "Customer reports an issue updating the shipping address", "model": "openai/gpt-oss-120b", "prompt_version": "2026-10-11.2"}
+{"id": "241f189f3c49", "urgency": "medium", "sentiment": "neutral", "reason": "Customer requests to cancel an order", "model": "openai/gpt-oss-120b", "prompt_version": "2026-10-11.2"}
+{"id": "b37d2c56e913", "urgency": "low", "sentiment": "neutral", "reason": "User requests assistance checking their bills", "model": "openai/gpt-oss-120b", "prompt_version": "2026-10-11.2"}
+{"id": "27fd44ed6610", "urgency": "high", "sentiment": "neutral", "reason": "User cannot sign up", "model": "openai/gpt-oss-120b", "prompt_version": "2026-10-11.2"}
+{"id": "e53dda27e3b3", "urgency": "low", "sentiment": "neutral", "reason": "User wants to unsubscribe from the newsletter", "model": "openai/gpt-oss-120b", "prompt_version": "2026-10-11.2"}
+{"id": "ee369d3ad9ff", "urgency": "low", "sentiment": "neutral", "reason": "Customer asks about available shipment options", "model": "openai/gpt-oss-120b", "prompt_version": "2026-10-11.2"}
+{"id": "b2beb3076f4d", "urgency": "medium", "sentiment": "neutral", "reason": "Customer wants to change shipping address", "model": "openai/gpt-oss-120b", "prompt_version": "2026-10-11.2"}
+{"id": "cd6c72f8542f", "urgency": "low", "sentiment": "neutral", "reason": "User asks where refunds/compensations are received", "model": "openai/gpt-oss-120b", "prompt_version": "2026-10-11.2"}
+{"id": "aa50c4991f04", "urgency": "low", "sentiment": "neutral", "reason": "User wants assistance editing an order", "model": "openai/gpt-oss-120b", "prompt_version": "2026-10-11.2"}
+{"id": "c6b84c54ef2d", "urgency": "low", "sentiment": "neutral", "reason": "Customer is asking how to obtain a specific invoice", "model": "openai/gpt-oss-120b", "prompt_version": "2026-10-11.2"}
+{"id": "b32a4e608930", "urgency": "low", "sentiment": "neutral", "reason": "Inquiry about refund processing time", "model": "openai/gpt-oss-120b", "prompt_version": "2026-10-11.2"}
+{"id": "15a0455c4ee9", "urgency": "medium", "sentiment": "negative", "reason": "Customer wants to file a reclamation", "model": "openai/gpt-oss-120b", "prompt_version": "2026-10-11.2"}
+{"id": "89eb90e1e6f4", "urgency": "low", "sentiment": "neutral", "reason": "User requests help sending product feedback", "model": "openai/gpt-oss-120b", "prompt_version": "2026-10-11.2"}
+{"id": "696f46abdee0", "urgency": "medium", "sentiment": "negative", "reason": "User is frustrated and asks where to report payment issues", "model": "openai/gpt-oss-120b", "prompt_version": "2026-10-11.2"}
+{"id": "39a2b758b846", "urgency": "low", "sentiment": "neutral", "reason": "Customer asks about available shipping options", "model": "openai/gpt-oss-120b", "prompt_version": "2026-10-11.2"}
+{"id": "57d3eff57514", "urgency": "low", "sentiment": "neutral", "reason": "Customer wants to know cancellation fees", "model": "openai/gpt-oss-120b", "prompt_version": "2026-10-11.2"}
+{"id": "f0a9cdb17119", "urgency": "low", "sentiment": "neutral", "reason": "requesting customer service phone number", "model": "openai/gpt-oss-120b", "prompt_version": "2026-10-11.2"}
+{"id": "7cce73b31e47", "urgency": "low", "sentiment": "neutral", "reason": "User asks how to report payment problems", "model": "openai/gpt-oss-120b", "prompt_version": "2026-10-11.2"}

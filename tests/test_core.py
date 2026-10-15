@@ -15,8 +15,8 @@ from ticket_triage.schema import CATEGORIES, SilverLabel, Triage, json_schema
 
 # --- schema -----------------------------------------------------------------
 def test_triage_normalises_case_and_spaces():
-    t = Triage(category="Shipping Address", urgency="HIGH", sentiment=" Negative ", confidence=0.9)
-    assert (t.category, t.urgency, t.sentiment) == ("shipping_address", "high", "negative")
+    t = Triage(category=" Shipping ", urgency="HIGH", sentiment=" Negative ", confidence=0.9)
+    assert (t.category, t.urgency, t.sentiment) == ("shipping", "high", "negative")
 
 
 def test_triage_rejects_unknown_values():

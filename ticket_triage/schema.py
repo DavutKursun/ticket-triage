@@ -12,15 +12,15 @@ from typing import Literal
 from pydantic import BaseModel, Field, field_validator
 
 CATEGORIES: tuple[str, ...] = (
-    "account", "cancellation_fee", "contact", "delivery", "feedback", "invoice", "newsletter",
-    "order", "payment", "refund", "shipping_address", "subscription",
+    "account", "cancel", "contact", "delivery", "feedback", "invoice", "order", "payment",
+    "refund", "shipping", "subscription",
 )
 URGENCIES: tuple[str, ...] = ("low", "medium", "high", "urgent")
 SENTIMENTS: tuple[str, ...] = ("negative", "neutral", "positive")
 
 Category = Literal[
-    "account", "cancellation_fee", "contact", "delivery", "feedback", "invoice", "newsletter",
-    "order", "payment", "refund", "shipping_address", "subscription",
+    "account", "cancel", "contact", "delivery", "feedback", "invoice", "order", "payment",
+    "refund", "shipping", "subscription",
 ]
 Urgency = Literal["low", "medium", "high", "urgent"]
 Sentiment = Literal["negative", "neutral", "positive"]

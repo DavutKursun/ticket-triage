@@ -22,7 +22,7 @@ Deviations from the original spec — all because Davut uses **no paid API**:
   downgrade to older IDs without asking.
 
 Implemented:
-- `ticket_triage/config.py`, `schema.py` (Triage / SilverLabel / TriageResponse, 12 categories — build_dataset.py
+- `ticket_triage/config.py`, `schema.py` (Triage / SilverLabel / TriageResponse, 11 categories — build_dataset.py
   asserts they match the dataset), `rubric.py` (versioned prompts, urgency + sentiment rubric, few-shot block),
   `providers.py` (OpenAICompatProvider, AnthropicProvider, QuotaError, complete_validated with one repair),
   `llm_engine.py` (zero/few-shot, budget guard), `baseline.py` (TF-IDF word+char + logreg, one model per task),

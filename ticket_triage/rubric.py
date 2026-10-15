@@ -6,21 +6,20 @@ from __future__ import annotations
 
 from .schema import CATEGORIES
 
-PROMPT_VERSION = "2026-10-11.1"
+PROMPT_VERSION = "2026-10-11.2"
 
 CATEGORY_DEFINITIONS: dict[str, str] = {
-    "account": "creating, editing, recovering, switching or deleting a user account; passwords and login",
-    "cancellation_fee": "questions or complaints about fees charged for cancelling",
+    "account": "creating, editing, recovering, switching or deleting a user account; passwords, login, registration problems",
+    "cancel": "questions or complaints about the fee charged for cancelling (cancelling an order itself is 'order')",
     "contact": "how to reach a human agent or customer service",
     "delivery": "delivery options, delivery times, where the parcel is",
     "feedback": "leaving a review or complaint about the company or service in general",
     "invoice": "finding, downloading or correcting an invoice",
-    "newsletter": "subscribing to or unsubscribing from the newsletter",
     "order": "placing, changing, tracking or cancelling an order",
     "payment": "payment methods, failed or duplicate payments, payment issues",
-    "refund": "asking for, tracking or disputing a refund",
-    "shipping_address": "adding, changing or problems with the shipping address",
-    "subscription": "a recurring plan or membership: start, change, cancel",
+    "refund": "refund policy, asking for, tracking or disputing a refund",
+    "shipping": "adding, changing or problems with the shipping address",
+    "subscription": "subscribing to or unsubscribing from the newsletter / mailing list",
 }
 assert tuple(CATEGORY_DEFINITIONS) == CATEGORIES
 

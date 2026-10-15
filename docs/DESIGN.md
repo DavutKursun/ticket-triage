@@ -6,7 +6,7 @@ often labels change. This project measures all four on the same data so the reco
 table, not an opinion.
 
 ## Labels
-- Category: gold from Bitext (12 categories; 27 intents collapsed).
+- Category: gold from Bitext (11 categories; 27 intents collapsed).
 - Urgency / sentiment: silver labels from an LLM (rubric in `ticket_triage/rubric.py`,
   `PROMPT_VERSION` recorded on every row). Quality measured on 200 hand-checked rows (Cohen's kappa).
   Known limitation: silver labels inherit the LLM's biases; the hard set is hand-labelled to

@@ -21,7 +21,7 @@ Silver-label quality (urgency / sentiment vs. 200 hand-checked): accuracy – / 
 **Decision table** — _API wins when… / fine-tuned wins when…_ (Milestone 4).
 
 ## How it works
-1. **Data** — Bitext customer-support dataset (27k messages, 12 categories, CDLA-Sharing-1.0),
+1. **Data** — Bitext customer-support dataset (27k messages, 11 categories, CDLA-Sharing-1.0),
    deduplicated, stratified 80/10/10. Urgency and sentiment do not exist in the data: they are
    **silver labels** from an LLM with a written rubric, and their quality is measured against 200
    hand-checked examples. A 300-message **hard set** (long, multi-issue, typos, 20% Turkish) is
