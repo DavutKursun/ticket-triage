@@ -55,9 +55,31 @@ takes under two seconds and the model is 1.8 MB. On dev the category task is ess
 set exists.
 
 ## Fine-tuned path (M3)
-xlm-roberta-base, three classification heads, loss = sum of cross-entropies, 3 epochs, early
-stopping on dev macro-F1, Kaggle T4. Export: ONNX + int8 dynamic quantisation via optimum;
-latency measured batch 1 and 32 on CPU.
+`ticket_triage/ft_model.py` (shared by `scripts/train.py` and the Kaggle notebook): xlm-roberta-base, dropout,
+three linear heads on the first-token state; loss = CE(category) + CE(urgency) + CE(sentiment). Plain PyTorch loop
+so the two data problems stay visible:
+- **Missing labels.** Category is gold on every train row (19,639); urgency/sentiment exist only on the 990
+  silver-labelled rows plus the synthetic rows. Missing labels are `-100`; a fully masked batch contributes 0, never
+  NaN. Labelled rows are oversampled ×4 per epoch (logged as the effective epoch size) so the small heads get
+  enough updates without starving the category head.
+- **Missing classes.** Silver train has 0 `urgent` and 1 `positive`. `scripts/make_synth.py` writes TRAIN-ONLY synthetic
+  rows for `urgent`, `high` and `positive` from the rubric's exact definitions, then the production silver labeller
+  labels them blind and only rows where both labels agree are kept (`data/silver/train_synth.jsonl`,
+  `source="synthetic"`). They never enter dev, test or the hard set, so evaluation stays clean. Inverse-sqrt class
+  weights (normalised to mean 1, `--no-class-weights` to disable) soften the remaining imbalance.
+  Run of 2026-10-19: 360 planned (120 per class, 30% Turkish), 272 kept, 88 rejected, $0.12. Kept: urgent 108/120,
+  high 77/120, positive 87/120. The labeller mostly disagreed on tone (planned neutral, read as negative) and on
+  medium vs low for positive rows; rejected rows stay in `train_synth.rejected.jsonl` for inspection. With them the
+  real run sees 19,911 train rows, 1,262 with urgency/sentiment (urgency 791 low / 222 medium / 141 high / 108
+  urgent; sentiment 933 neutral / 241 negative / 88 positive) and an effective epoch of 23,697 rows = 741 steps.
+- Training: AdamW 2e-5, 6% warmup, fp16 on CUDA, batch 32, 3 epochs, fixed seed; after each epoch category on the
+  full dev split and urgency/sentiment on the silver dev rows (macro-F1 over classes present); best epoch = mean of
+  the three macro-F1s. Saved: safetensors state dict, encoder config, tokenizer, `labels.json`, `dev_metrics.json`.
+- The Kaggle run is not the first run: `make train-smoke` (`train.py --tiny`) builds a seeded 2-layer, 32-wide random
+  XLM-R locally (`XLMRobertaConfig` sized to the tokenizer-only repo `hf-internal-testing/tiny-random-xlm-roberta`,
+  no weights download) and trains it on 64 rows in the separate `.venv-train` (CPU torch, pinned); it must save a
+  model and `dev_metrics.json`. Kaggle runs `--model-name xlm-roberta-base` unchanged. Export (M3-2): ONNX + int8 dynamic
+  quantisation via optimum; latency measured batch 1 and 32 on CPU.
 
 ## Findings
 ### Dev, preliminary (M2) — `eval/results/dev-summary.md`

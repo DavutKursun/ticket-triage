@@ -1,4 +1,6 @@
-.PHONY: setup setup-dev test data silver baseline eval-dry eval-dev app
+.PHONY: setup setup-dev test data silver baseline eval-dry eval-dev synth train-smoke app
+
+PY_TRAIN ?= .venv-train/bin/python
 
 PY ?= python
 
@@ -18,5 +20,9 @@ eval-dry:
 	$(PY) scripts/eval.py --split dev --engines baseline --dry-run
 eval-dev:         ## zero-shot, few-shot (cached) and baseline on the 495 silver-labelled dev rows
 	$(PY) scripts/eval.py --split dev --engines llm_zero,llm_few,baseline --delay 0.5
+synth:            ## synthetic train-only rows for urgent/high/positive, verified by the silver labeller
+	$(PY) scripts/make_synth.py
+train-smoke:      ## tiny model, 64 rows, 1 epoch on CPU — proves the training loop end to end (needs .venv-train)
+	$(PY_TRAIN) scripts/train.py --tiny --limit 64 --epochs 1 --out models/smoke
 app:
 	$(PY) -m uvicorn app:app --port 7860

@@ -6,7 +6,7 @@ from pydantic import ValidationError
 
 from ticket_triage.baseline import BaselineEngine
 from ticket_triage.costs import BudgetGuard, cost_per_1000, format_cost
-from ticket_triage.data import dedupe_and_split, stable_id, write_handcheck_template, write_jsonl
+from ticket_triage.data import dedupe_and_split, load_synth, stable_id, write_handcheck_template, write_jsonl
 from ticket_triage.llm_engine import LLMEngine
 from ticket_triage.providers import (
     OpenAICompatProvider,
@@ -176,6 +176,7 @@ def test_openai_compat_sends_reasoning_effort_only_when_set():
 
 
 def test_get_provider_wires_reasoning_effort_from_settings():
+    pytest.importorskip("openai")  # get_provider builds a real OpenAI client; the training venv does not ship it
     from types import SimpleNamespace as NS
 
     cfg = NS(llm_provider="openai_compat", llm_model="m", llm_api_key="k", llm_base_url="http://localhost", llm_reasoning_effort="medium")
@@ -265,6 +266,16 @@ def test_handcheck_template_tops_up_when_urgency_classes_are_rare(tmp_path, tiny
     assert len(df) == 40 and df["id"].is_unique
     assert list(df.columns) == ["id", "text", "category", "silver_urgency", "silver_sentiment", "urgency", "sentiment", "note"]
     assert (df["urgency"] == "").all()
+
+
+def test_load_synth_missing_file_is_empty_frame(tmp_path, monkeypatch):
+    import ticket_triage.data as d
+
+    monkeypatch.setattr(d, "SILVER", tmp_path)
+    df = load_synth()
+    assert df.empty and list(df.columns) == ["id", "text", "category", "urgency", "sentiment", "language", "source"]
+    write_jsonl(tmp_path / "train_synth.jsonl", [{"id": "x", "text": "t", "category": "refund", "urgency": "urgent", "sentiment": "negative", "language": "en", "source": "synthetic"}])
+    assert load_synth().iloc[0]["urgency"] == "urgent"
 
 
 # --- baseline ---------------------------------------------------------------

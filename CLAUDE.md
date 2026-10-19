@@ -6,8 +6,9 @@ Section 0 says where we are and what changed from the original plan.
 
 ## 0. Status (updated 2026-10-19)
 
-**Milestone 2 is done on dev (23 tests, no network). Milestone 1's last third (Davut's 200-row hand-check and his
-edit/label pass over the 300 hard-set candidates) runs in parallel. Next is M3, the Kaggle fine-tune (see "Next").**
+**M3 part 1 of 3 is done: synthetic train rows + multi-task fine-tuning code, smoke-tested locally (24 tests in the
+main venv + 5 torch tests in `.venv-train`, no network). Next is M3-2: ONNX export, `ft_engine.py`, Kaggle notebook
+(see "Next"). Milestone 1's last third (Davut's hand-check and hard-set pass) runs in parallel.**
 
 Deviations from the original spec:
 - Silver labels come from **`claude-haiku-5-5`** (`LLM_PROVIDER=anthropic`, `messages.parse` + Pydantic, one repair
@@ -29,7 +30,14 @@ Deviations from the original spec:
 - Model IDs verified 2026-10-09: `claude-haiku-5-5` ($0.10/$0.50 per MTok), `claude-sonnet-5-5` ($2/$10). Never
   downgrade to older IDs without asking.
 - Labels are skewed because Bitext is templated: across 1,980 rows there are 0 `urgent` and 1 `positive`
-  (urgency ≈73% low / 22% medium / 7% high; sentiment ≈89% neutral). The hard set must supply those classes.
+  (urgency ≈73% low / 22% medium / 7% high; sentiment ≈89% neutral). The hard set must supply those classes for
+  evaluation; for training, `scripts/make_synth.py` added 272 TRAIN-ONLY synthetic rows (108 urgent, 77 high,
+  87 positive; Haiku-written from the rubric, kept only when the silver labeller agrees blind; 88 rejected; $0.12)
+  in `data/silver/train_synth.jsonl` (`source="synthetic"`). Never in dev, test or the hard set.
+- Fine-tuning runs in a separate `.venv-train` (`requirements-train.txt`, CPU torch, pinned); torch never enters
+  the main venv, and `tests/test_ft.py` skips there. The local smoke test uses `train.py --tiny` (2-layer random
+  XLM-R built from the tokenizer-only `hf-internal-testing/tiny-random-xlm-roberta`); Kaggle uses
+  `--model-name xlm-roberta-base`. On Kaggle install only the non-torch lines of `requirements-train.txt`.
 
 Implemented:
 - `ticket_triage/config.py` (incl. `LLM_REASONING_EFFORT`), `schema.py` (Triage / SilverLabel / TriageResponse,
@@ -51,23 +59,32 @@ Implemented:
   `data/silver/{train,dev,test}.jsonl` (990 / 495 / 495, prompt 2026-10-11.2), `data/handcheck/{dev,test}_100.csv`,
   `data/hard/hard_draft.csv` (300 candidates: 48 urgent, 36 positive, 60 Turkish, 90 two-issue, 75 with typos,
   2–6 sentences, ≈$0.07) + `data/hard/REVIEW.md`
-- `tests/test_core.py` (23 tests: FakeProvider, fake OpenAI client, backoff, Anthropic validation→repair, cache
-  accounting, hand-check template), CI, Makefile,
+- `ticket_triage/ft_model.py` (TriageModel = encoder + dropout + heads 11/4/3 on the first token; labels -100 where
+  missing; loss = CE + masked CE + masked CE with inverse-sqrt class weights; labelled rows oversampled ×4; AdamW
+  2e-5, 6% warmup, fp16 on CUDA, batch 32, 3 epochs, seed 7; per-epoch dev eval, best epoch by mean macro-F1;
+  saves safetensors + encoder config + tokenizer + labels.json + ft_config.json + dev_metrics.json; `load_model`),
+  `scripts/train.py` (thin wrapper, `--tiny`), `scripts/make_synth.py`. Real run: 19,911 train rows, 1,262
+  labelled, effective epoch 23,697 rows = 741 steps, 2,223 steps for 3 epochs.
+- `tests/test_core.py` (24 tests: FakeProvider, fake OpenAI client, backoff, Anthropic validation→repair, cache
+  accounting, hand-check template, load_synth), `tests/test_ft.py` (5 torch tests: label masking, loss masking,
+  class weights, oversampler, tiny model shapes; skipped without torch), CI, Makefile (`synth`, `train-smoke`),
   requirements split (core / full / dev / train)
-- NOT yet: `ft_engine.py`, `scripts/train.py`, `export_onnx.py`, `bench_latency.py`, notebook, FastAPI routes,
+- NOT yet: `ft_engine.py`, `export_onnx.py`, `bench_latency.py`, notebook, the real training run, FastAPI routes,
   Gradio, Dockerfile.
 
-**Next (M3, Kaggle fine-tune):** `notebooks/train_kaggle.ipynb` + `scripts/train.py` sharing one module:
-`xlm-roberta-base`, three heads, loss = sum of cross-entropies with a mask for rows that have no silver label
-(category gold on all 19,639 train rows; urgency/sentiment silver on 990), 3 epochs, early stopping on dev macro-F1
-(the 495 silver dev rows), then `export_onnx.py` (int8 dynamic quantisation via optimum), `ft_engine.py`,
-`bench_latency.py`, model + card on Davut's Hugging Face account; fall back to three sequential heads if multi-task
-misbehaves. **In parallel (M1 3/3, Davut):** fill `data/handcheck/{dev,test}_100.csv` without looking at the silver
-columns → `python scripts/agreement.py` (target κ ≥ 0.75; below that refine the rubric once, bump `PROMPT_VERSION`,
-relabel); edit/label `data/hard/hard_draft.csv` per `data/hard/REVIEW.md` → `data/hard/hard.csv`. The test split
-and the hard set stay untouched until M4.
+**Next (M3-2):** `scripts/export_onnx.py` (optimum ONNX export of the saved TriageModel + int8 dynamic quantisation;
+verify ONNX vs PyTorch logits on a few dev rows), `ticket_triage/ft_engine.py` (ONNX inference with the PyTorch model
+as fallback, same `classify`/`respond` interface as the other engines, confidence = category softmax max), and
+`notebooks/train_kaggle.ipynb` (installs the non-torch lines of `requirements-train.txt`, clones the repo, runs
+`ticket_triage.ft_model.train` with `--model-name xlm-roberta-base`, saves the model as a Kaggle output). Then M3-3:
+the real T4 run, `bench_latency.py`, dev results, model + card on Davut's Hugging Face account. Fall back to three
+sequential heads if multi-task misbehaves. **In parallel (M1 3/3, Davut):** fill `data/handcheck/{dev,test}_100.csv`
+without looking at the silver columns → `python scripts/agreement.py` (target κ ≥ 0.75; below that refine the rubric
+once, bump `PROMPT_VERSION`, relabel); edit/label `data/hard/hard_draft.csv` per `data/hard/REVIEW.md` →
+`data/hard/hard.csv`. The test split and the hard set stay untouched until M4.
 
-macOS notes: Python 3.11 venv; torch is only needed for M3 (Kaggle) — do not install requirements-train.txt locally.
+macOS notes: Python 3.11 venvs; torch lives only in `.venv-train` (CPU wheels) — never install requirements-train.txt
+into the main `.venv`.
 
 ## 1. Goal
 

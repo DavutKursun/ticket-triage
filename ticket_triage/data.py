@@ -4,6 +4,8 @@ Files (all UTF-8):
   data/splits/{train,dev,test}.jsonl   {"id", "text", "category", "intent"}            gold category (Bitext, CDLA-Sharing-1.0)
   data/silver/{dev,test,train}.jsonl   {"id", "urgency", "sentiment", "reason", "model", "prompt_version"}
   data/silver/train.gpt-oss-120b.jsonl earlier train labels from the Groq free tier (reference only, never loaded)
+  data/silver/train_synth.jsonl        {"id", "text", "category", "urgency", "sentiment", "language", "source": "synthetic", ...}
+                                       TRAIN-ONLY synthetic rows for the classes silver train lacks (never in dev/test/hard)
   data/hard/hard.csv                   id,text,category,urgency,sentiment,language,split   hand-written and hand-labelled
   data/handcheck/{dev,test}_100.csv    id,text,category,silver_urgency,silver_sentiment,urgency,sentiment,note
                                        (Davut fills the last three columns)
@@ -81,6 +83,12 @@ def load_split(name: str) -> pd.DataFrame:
 def load_silver(name: str) -> pd.DataFrame:
     rows = read_jsonl(SILVER / f"{name}.jsonl")
     return pd.DataFrame(rows, columns=["id", "urgency", "sentiment", "reason", "model", "prompt_version"])
+
+
+def load_synth() -> pd.DataFrame:
+    """Synthetic train-only rows (scripts/make_synth.py); empty frame when the file does not exist."""
+    rows = read_jsonl(SILVER / "train_synth.jsonl")
+    return pd.DataFrame(rows, columns=["id", "text", "category", "urgency", "sentiment", "language", "source"])
 
 
 def load_hard(split: str | None = None) -> pd.DataFrame:

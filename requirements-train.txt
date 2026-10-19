@@ -1,7 +1,19 @@
-# Kaggle / GPU only (Milestone 3)
-torch>=2.3
-transformers>=4.44
-datasets>=3.0
-accelerate>=0.33
-optimum[onnxruntime]>=1.22
-evaluate>=0.4
+# Fine-tuning (Milestone 3). Local smoke tests: python3.11 -m venv .venv-train && .venv-train/bin/pip install -r requirements-train.txt
+# CPU torch comes from the extra index; torch must never enter the main .venv. On Kaggle torch is preinstalled:
+# install only the non-torch lines there. Versions pinned to the local smoke-test environment (macOS, 2026-10-19).
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.14.1
+transformers==4.57.6
+tokenizers==0.22.2
+sentencepiece==0.2.2
+protobuf==7.36.2
+safetensors==0.8.0
+optimum[onnxruntime]==2.1.0
+optimum-onnx==0.1.0
+onnx==1.23.2
+onnxruntime==1.31.0
+pydantic==2.14.1
+pandas==3.0.6
+numpy==2.4.6
+scikit-learn==1.9.1
+pytest==9.1.1

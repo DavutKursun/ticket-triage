@@ -44,7 +44,10 @@ self-agreement and optimistic. Test set and hard set stay untouched until Milest
 1. **Data** — Bitext customer-support dataset (27k messages, 11 categories, CDLA-Sharing-1.0),
    deduplicated, stratified 80/10/10. Urgency and sentiment do not exist in the data: they are
    **silver labels** from an LLM with a written rubric, and their quality is measured against 200
-   hand-checked examples. A 300-message **hard set** (long, multi-issue, typos, 20% Turkish) is
+   hand-checked examples. Silver train has almost no `urgent` or `positive` rows, so 272 **synthetic
+   train-only** messages (`data/silver/train_synth.jsonl`, written by Haiku from the rubric and kept only when the
+   silver labeller agrees blind) feed the fine-tuned model's urgency/sentiment heads — never dev, test or the
+   hard set. A 300-message **hard set** (long, multi-issue, typos, 20% Turkish) is
    hand-written and hand-labelled, because the public data is templated and too easy.
 2. **Four engines** — TF-IDF baseline · LLM zero-shot · LLM few-shot · fine-tuned encoder
    (multi-task heads, exported to ONNX int8).
@@ -64,6 +67,10 @@ python scripts/agreement.py --make-templates                       # hand-check 
 python scripts/train_baseline.py
 python scripts/eval.py --split dev --engines llm_zero,llm_few,baseline --delay 0.5   # resumable; eval/results/
 pytest -q
+# fine-tuning (Milestone 3) lives in a separate venv so torch never enters the main one
+python3.11 -m venv .venv-train && .venv-train/bin/pip install -r requirements-train.txt   # CPU torch, pinned
+make synth          # train-only synthetic rows for urgent / high / positive, verified by the silver labeller
+make train-smoke    # tiny random encoder, 64 rows, 1 epoch: proves the training loop before the Kaggle run
 ```
 
 ## Repository
