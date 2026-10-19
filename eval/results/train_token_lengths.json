@@ -9,17 +9,17 @@
       "max": 30
     },
     "synthetic / en": {
-      "n": 275,
-      "p50": 65,
-      "p95": 104,
-      "p99": 123,
+      "n": 320,
+      "p50": 61,
+      "p95": 100,
+      "p99": 122,
       "max": 144
     },
     "synthetic / tr": {
-      "n": 106,
-      "p50": 57,
-      "p95": 92,
-      "p99": 110,
+      "n": 127,
+      "p50": 54,
+      "p95": 91,
+      "p99": 108,
       "max": 117
     },
     "translated / tr": {
@@ -31,24 +31,42 @@
     }
   },
   "non_bitext": {
-    "n": 681,
-    "p50": 46,
-    "p95": 94,
-    "p99": 114,
+    "n": 747,
+    "p50": 35,
+    "p95": 93,
+    "p99": 113,
     "max": 144
   },
   "all": {
-    "n": 20320,
+    "n": 20386,
     "p50": 13,
     "p95": 19,
     "p99": 61,
     "max": 144
   },
-  "recommended_max_len": 128,
-  "truncated_at_recommended": {
-    "bitext / en": 0,
-    "synthetic / en": 2,
-    "synthetic / tr": 0,
-    "translated / tr": 0
+  "smallest_covering_p99": 128,
+  "configured_max_len": 192,
+  "truncated_at": {
+    "128": {
+      "bitext / en": 0,
+      "synthetic / en": 2,
+      "synthetic / tr": 0,
+      "translated / tr": 0,
+      "all": 2
+    },
+    "192": {
+      "bitext / en": 0,
+      "synthetic / en": 0,
+      "synthetic / tr": 0,
+      "translated / tr": 0,
+      "all": 0
+    },
+    "256": {
+      "bitext / en": 0,
+      "synthetic / en": 0,
+      "synthetic / tr": 0,
+      "translated / tr": 0,
+      "all": 0
+    }
   }
 }

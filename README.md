@@ -47,8 +47,8 @@ self-agreement and optimistic. Test set and hard set stay untouched until Milest
    hand-checked examples. Silver train has almost no `urgent` or `positive` rows, so the fine-tuned model also
    trains on **train-only augmentation** that never touches dev, test or the hard set: synthetic messages written
    by Haiku from the rubric and kept only when the silver labeller agrees blind (`data/silver/train_synth.jsonl`;
-   urgent/high/positive rows plus an equal-style control set of long, calm low/medium tickets so that neither
-   language nor length predicts the label) and 300 silver rows translated into Turkish
+   urgent/high/positive rows, an equal-style control set of long, calm low/medium tickets and one-line urgent and
+   positive tickets, so that neither language nor length predicts the label) and 300 silver rows translated into Turkish
    (`data/silver/train_translated.jsonl`). A 300-message **hard set** (long, multi-issue, typos, 20% Turkish) is
    hand-written and hand-labelled, because the public data is templated and too easy.
 2. **Four engines** — TF-IDF baseline · LLM zero-shot · LLM few-shot · fine-tuned encoder
@@ -71,7 +71,7 @@ python scripts/eval.py --split dev --engines llm_zero,llm_few,baseline --delay 0
 pytest -q
 # fine-tuning (Milestone 3) lives in a separate venv so torch never enters the main one
 python3.11 -m venv .venv-train && .venv-train/bin/pip install -r requirements-train.txt   # CPU torch, pinned
-make synth          # train-only synthetic rows (urgent / high / positive + calm control set), verified blind
+make synth          # train-only synthetic rows (urgent / high / positive, calm control set, one-liners), verified blind
 make translate      # 300 silver train rows in customer-style Turkish (train only)
 make train-smoke    # tiny random encoder, 64 rows, 1 epoch: proves the training loop before the Kaggle run
 make export-smoke   # ...then fp32 + int8 ONNX with a parity report (eval/ONNX code path, no GPU)

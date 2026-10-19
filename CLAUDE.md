@@ -6,8 +6,9 @@ Section 0 says where we are and what changed from the original plan.
 
 ## 0. Status (updated 2026-10-19)
 
-**M3 part 2 of 3 is done: de-biased train augmentation, ONNX export, the ONNX serving engine and the Kaggle notebook,
-all smoke-tested locally end to end (32 tests in the main venv, 37 in `.venv-train`, no network). Next is M3-3: Davut
+**M3 part 2 of 3 is done (incl. 2b: short synthetic rows, max_len 192): de-biased train augmentation, ONNX export, the
+ONNX serving engine and the Kaggle notebook, all smoke-tested locally end to end (32 tests in the main venv, 38 in
+`.venv-train`, no network). Next is M3-3: Davut
 runs the notebook on Kaggle (runbook in "Next"), then the dev evaluation of the fine-tuned engine. Milestone 1's last
 third (Davut's hand-check and hard-set pass) runs in parallel.**
 
@@ -39,12 +40,15 @@ Deviations from the original spec:
   32% of >16-word rows were low/medium): plan "control" added 109 long calm low/medium rows (240 planned, the labeller
   disagreed on low vs medium for most rejects; $0.085) and `scripts/translate_train.py` 300 Turkish translations of
   silver train rows (labels carried over, 60 without Turkish characters; $0.012). After: Turkish 18% vs English 15%
-  urgent+high, >16-word rows 51% low/medium (`eval/results/train_confounds.md`). Still no short urgent row anywhere.
+  urgent+high, >16-word rows 51% low/medium (`eval/results/train_confounds.md`).
+- M3-2b: plan "short" added 66 one-line rows of 6–16 words (34 urgent, 13 high, 19 positive; 90 planned; $0.030), so
+  ≤16-word rows are no longer never urgent (0 → 34 urgent). Targets still hold: Turkish 21% vs English 17% urgent+high.
 - Fine-tuning runs in a separate `.venv-train` (`requirements-train.txt`, CPU torch, pinned, no optimum); torch never
   enters the main venv, and `tests/test_ft.py` skips there. Local smoke tests use `train.py --tiny` (2-layer random
   XLM-R built from the tokenizer-only `hf-internal-testing/tiny-random-xlm-roberta`); Kaggle uses
-  `--model-name xlm-roberta-base` and installs `requirements-kaggle.txt` (never torch). max_len 128 covers p99 (114)
-  of the long synthetic/translated rows (`eval/results/train_token_lengths.md`).
+  `--model-name xlm-roberta-base` and installs `requirements-kaggle.txt` (never torch). max_len default 192
+  (`TrainConfig`, carried by ft_config.json into export and the engine): headroom for six-sentence hard-set tickets;
+  2 train rows exceed 128 tokens, none exceed 192 (`eval/results/train_token_lengths.md`).
 - ONNX export uses `torch.onnx.export` directly (the default dynamo exporter needs onnxscript, so it falls back to
   `dynamo=False`) + onnxruntime `quantize_dynamic`; optimum is not used. Serving needs only onnxruntime + tokenizers.
 - Hub repo `DavutKursun/ticket-triage-xlmr` (public, empty until the Kaggle push) was created with Davut's existing
@@ -75,9 +79,9 @@ Implemented:
   2e-5, 6% warmup, fp16 on CUDA, batch 32, 3 epochs, seed 7; per-epoch dev eval, best epoch by mean macro-F1;
   saves safetensors + encoder config + tokenizer + labels.json + ft_config.json + dev_metrics.json; `load_model`;
   hard-dev metrics per epoch when `data/hard/hard.csv` exists, report only), `scripts/train.py` (thin wrapper,
-  `--tiny`, `--no-synth`, `--no-translated`, writes `train_meta.json`), `scripts/make_synth.py` (plans minority +
-  control), `translate_train.py`, `train_confounds.py`, `token_lengths.py`. Real run: 20,320 train rows, 1,671
-  labelled, effective epoch 25,333 rows = 792 steps, 2,376 steps for 3 epochs.
+  `--tiny`, `--no-synth`, `--no-translated`, writes `train_meta.json`), `scripts/make_synth.py` (plans minority,
+  control, short), `translate_train.py`, `train_confounds.py`, `token_lengths.py`. Real run: 20,386 train rows, 1,737
+  labelled, effective epoch 25,597 rows = 800 steps, 2,400 steps for 3 epochs.
 - `scripts/export_onnx.py` (fp32 to `fp32/`, int8 to `onnx/` with tokenizer.json + labels.json + ft_config.json,
   QInt8 → per-channel → QUInt8 ladder at 98% category agreement, `export_report.json` with parity, sizes, tokenizer
   parity, CPU latency), `ticket_triage/ft_engine.py` (FTEngine: local folder or Hub repo id, `classify` /
@@ -87,7 +91,7 @@ Implemented:
   100%, tokenizer parity 607/607 (406 Turkish), serving folder 0.52 MB.
 - `tests/test_core.py` (24 tests), `tests/test_ft_engine.py` (8 tests on the committed 0.52 MB fixture
   `tests/fixtures/tiny_onnx/`: schema, probabilities sum to 1, batch == single, 5,000-character input, Turkish, empty
-  input, tokenizer ids vs transformers, folder resolution), `tests/test_ft.py` (6 torch tests incl. export parity;
+  input, tokenizer ids vs transformers, folder resolution), `tests/test_ft.py` (7 torch tests incl. export parity;
   skipped without torch), CI, Makefile (`synth`, `translate`, `train-smoke`, `export-smoke`, `notebook-smoke`,
   `eval-ft-dev`), requirements split (core / full / dev / train / kaggle)
 - NOT yet: the real training run, `bench_latency.py`, fine-tuned dev results, FastAPI routes, Gradio, Dockerfile.

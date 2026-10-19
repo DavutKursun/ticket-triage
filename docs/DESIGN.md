@@ -82,16 +82,23 @@ so the two data problems stay visible:
   - `scripts/translate_train.py`: 300 silver train rows (27–28 per category, urgency in proportion) translated into
     customer-style Turkish by Haiku, labels carried over, 60 typed without Turkish characters ($0.012, 0 rejected).
   After: Turkish urgent+high 18% vs English 15% (gap 2.9 points, target ≤ 10) and positive 6% vs 5%; >16-word rows 51%
-  low/medium (target ≥ 40%). No top-up was needed. Still open: no short (≤16-word) urgent row exists anywhere in train
-  (Bitext has none and neither do its translations), so "short ⇒ not urgent" remains learnable; the hard set is long,
-  so it does not reward that shortcut, but real one-line urgent tickets may be under-called.
-- **Real run data.** 20,320 train rows (19,639 Bitext + 381 synthetic + 300 translated), 1,671 with urgency/sentiment
-  (urgency 1,060 low / 343 medium / 160 high / 108 urgent; sentiment 1,268 neutral / 315 negative / 88 positive),
-  effective epoch 25,333 rows = 792 steps, 2,376 steps for 3 epochs. `--no-synth` / `--no-translated` drop either part.
-- **max_len 128.** xlm-roberta-base token counts (`eval/results/train_token_lengths.md`, incl. special tokens): Bitext
-  p99 21, synthetic English p99 123 (max 144), synthetic Turkish p99 110, translated p99 23; the non-Bitext p99 is 114,
-  so 128 is the smallest of 128/192/256 that covers it (2 of 681 augmented rows are truncated). The same value is stored
-  in ft_config.json and used at inference. Six-sentence hard-set tickets may run longer; `--max-len 192` is the lever.
+  low/medium (target ≥ 40%). No top-up was needed.
+- **Short rows (M3-2b).** That still left no urgent and almost no positive row of ≤16 words (Bitext has none and neither
+  do its translations), so "short ⇒ not urgent" was learnable and one-liners like "charged twice, fix it today" would be
+  under-called in the demo. Plan `short`: 90 messages of 6–16 words in one or two sentences (40 urgent, 20 high, 30
+  positive with low/medium urgency), ~30% Turkish with a third of those folded to ASCII before the blind verification;
+  texts outside the word window are re-asked. Kept 66 ($0.030): urgent 34/40, high 13/20, positive 19/30 (the labeller
+  read 9 medium/positive rows as low). ≤16-word labelled rows: urgent 0 → 34, urgent+high 6% → 10%, positive 0% → 2%;
+  the language and length targets still hold (Turkish 21% vs English 17% urgent+high, >16-word rows 51% low/medium).
+- **Real run data.** 20,386 train rows (19,639 Bitext + 447 synthetic + 300 translated), 1,737 with urgency/sentiment
+  (urgency 1,076 low / 346 medium / 173 high / 142 urgent; sentiment 1,281 neutral / 349 negative / 107 positive),
+  effective epoch 25,597 rows = 800 steps, 2,400 steps for 3 epochs. `--no-synth` / `--no-translated` drop either part.
+- **max_len 192 (M3-2b).** xlm-roberta-base token counts (`eval/results/train_token_lengths.md`, incl. special tokens):
+  Bitext p99 21, synthetic English p99 122 (max 144), synthetic Turkish p99 108, translated p99 23; the non-Bitext p99
+  is 113, which 128 would cover, but six-sentence hard-set tickets need headroom at inference. Train rows truncated:
+  2 at 128, 0 at 192. Collate pads per batch, so training barely pays for it. `TrainConfig.max_len` is the single
+  default: it is saved in ft_config.json, `export_onnx.py` copies it into `onnx/ft_config.json`, and the engine reads
+  it from there. The tiny smoke encoder has 130 position embeddings and caps itself at 128.
 - Training: AdamW 2e-5, 6% warmup, fp16 on CUDA, batch 32, 3 epochs, fixed seed; after each epoch category on the
   full dev split and urgency/sentiment on the silver dev rows (macro-F1 over classes present); best epoch = mean of
   the three macro-F1s. When `data/hard/hard.csv` exists its dev half is scored every epoch as well (report only, never

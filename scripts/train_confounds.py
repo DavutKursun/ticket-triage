@@ -1,8 +1,8 @@
 """Confound check over the LABELLED train rows (urgency/sentiment present): does language or length predict the label?
 
 Usage: python scripts/train_confounds.py   → eval/results/train_confounds.{json,md}
-"before" = the M3-1 train set (Bitext silver + synthetic plan "minority"); "after" = everything train_rows() loads
-(+ synthetic plan "control" + translated). Groups: language en/tr, length ≤16 / >16 words.
+Sets: "M3-1" = Bitext silver + synthetic plan "minority"; "M3-2" = + plan "control" + translated rows; "M3-2b" =
+everything train_rows() loads (+ plan "short"). Groups: language en/tr, length ≤16 / >16 words.
 Targets: Turkish urgent+high share within 10 points of English; the >16-word group at least 40% low/medium.
 """
 
@@ -58,8 +58,12 @@ def markdown(res: dict) -> str:
 
 
 def main() -> int:
-    res = {"before": table(train_rows(translated=False, synth_filter=lambda r: r.get("plan", "minority") == "minority")),
-           "after": table(train_rows())}
+    def plans(*names):
+        return lambda r: r.get("plan", "minority") in names
+
+    res = {"M3-1": table(train_rows(translated=False, synth_filter=plans("minority"))),
+           "M3-2": table(train_rows(synth_filter=plans("minority", "control"))),
+           "M3-2b": table(train_rows())}
     RESULTS.mkdir(parents=True, exist_ok=True)
     (RESULTS / "train_confounds.json").write_text(json.dumps(res, indent=2), encoding="utf-8")
     md = markdown(res)

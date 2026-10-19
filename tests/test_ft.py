@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import random
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -107,3 +108,21 @@ def test_export_parity_tiny(tmp_path):
     q = ex.ort_logits(ex.ort_session(tmp_path / "model.int8.onnx"), tok, texts, 128)
     assert {t: v.shape for t, v in q.items()} == {t: v.shape for t, v in ref.items()} == {"category": (3, 11), "urgency": (3, 4), "sentiment": (3, 3)}
     assert (tmp_path / "model.int8.onnx").stat().st_size < (tmp_path / "model.onnx").stat().st_size
+
+
+def test_default_max_len_192_reaches_ft_config(tmp_path):
+    """The Kaggle run passes no --max-len: TrainConfig's default lands in ft_config.json, which export_onnx copies into
+    onnx/ft_config.json and the serving engine reads."""
+    import json
+
+    from transformers import PreTrainedTokenizerFast
+
+    from ticket_triage.ft_model import TrainConfig, save_model
+
+    cfg = TrainConfig(out=str(tmp_path))
+    assert cfg.max_len == 192
+    root = Path(__file__).resolve().parents[1]
+    tok = PreTrainedTokenizerFast(tokenizer_file=str(root / "tests" / "fixtures" / "tiny_onnx" / "tokenizer.json"), pad_token="<pad>")
+    torch.manual_seed(0)
+    save_model(TriageModel(tokenizer=tok, tiny=True), tok, tmp_path, cfg)
+    assert json.loads((tmp_path / "ft_config.json").read_text())["max_len"] == 192

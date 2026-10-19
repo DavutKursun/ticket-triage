@@ -24,6 +24,7 @@ eval-dev:         ## zero-shot, few-shot (cached) and baseline on the 495 silver
 synth:            ## synthetic train-only rows (minority + control plans), verified by the silver labeller
 	$(PY) scripts/make_synth.py
 	$(PY) scripts/make_synth.py --plan control
+	$(PY) scripts/make_synth.py --plan short --max-usd 0.05
 translate:        ## 300 silver train rows translated into Turkish (train only)
 	$(PY) scripts/translate_train.py
 train-smoke:      ## tiny model, 64 rows, 1 epoch on CPU — proves the training loop end to end (needs .venv-train)

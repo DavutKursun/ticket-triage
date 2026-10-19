@@ -3,7 +3,8 @@
 Usage:
   python scripts/make_synth.py                      # plan "minority" (M3-1): 120 urgent, 120 high, 120 positive
   python scripts/make_synth.py --plan control       # plan "control" (M3-2): 240 long calm tickets
-Options: --per-class N (minority) · --scale X (control) · --seed S · --delay s · --max-usd $ · --out path
+  python scripts/make_synth.py --plan short --max-usd 0.05   # plan "short" (M3-2b): 90 one-line tickets
+Options: --per-class N (minority) · --scale X (control, short) · --seed S · --delay s · --max-usd $ · --out path
 
 Plans (deterministic from --seed):
 - minority: the classes silver train lacks. urgent/high rows get a negative or neutral tone; positive rows get low or
@@ -11,6 +12,9 @@ Plans (deterministic from --seed):
 - control: the SAME style, length and language mix, but the ordinary label mix (80 low/neutral, 40 low/negative,
   60 medium/neutral, 60 medium/negative). It removes the shortcut "Turkish or long => urgent/positive": without it every
   Turkish and every >16-word train row is an urgent/high/positive one, which is exactly the hard set's profile.
+- short: 90 one-line tickets of 6-16 words in one or two sentences (40 urgent, 20 high, 30 positive with low or medium
+  urgency), ~30% Turkish and a third of those typed without Turkish characters. Without them no train row of <=16 words
+  is urgent or positive, so "charged twice, fix it today" would be under-called. Texts outside 6-16 words are re-asked.
 Haiku writes 10 messages per call; then the regular silver labeller (SILVER_SYSTEM / SILVER_INSTRUCTION / SilverLabel)
 labels every message blind and a row is kept only when BOTH labels equal the constructed ones. Kept rows are merged into
 <out> (source="synthetic", plan, seed, target_class), rejected rows into <out stem>.rejected.jsonl; rows of other plans
@@ -49,6 +53,16 @@ CLASSES = {
 }
 # control plan: (urgency, sentiment, count) — the ordinary label mix at the synthetic rows' length and language mix
 CONTROL_CELLS = (("low", "neutral", 80), ("low", "negative", 40), ("medium", "neutral", 60), ("medium", "negative", 60))
+# short plan: (class, count); urgent/high take CLASSES' tone mix, positive rows get low or medium urgency
+SHORT_CLASSES = (("urgent", 40), ("high", 20), ("positive", 30))
+SHORT_WORDS = (6, 16)
+SHORT_FOLD_SHARE = 1 / 3  # of the Turkish short rows: typed without Turkish characters (folded after generation)
+SHORT_NOTE = ("These are SHORT one-line tickets as people type them into a chat: 6 to 16 words, one or two sentences, no "
+              "greeting, no sign-off; this overrides the usual 2-5 sentence style. The label must still be unmistakable from "
+              "those few words: an urgent ticket names what is going wrong right now or today (charged twice, money taken, "
+              "service down, deadline today), a high one says the customer is blocked, a positive one is warm or thankful. "
+              "typos=yes means one or two slips.")
+FOLD = str.maketrans("çğıöşüÇĞİÖŞÜ", "cgiosuCGIOSU")
 CONTROL_NOTE = ("These are calm-consequence tickets: urgency stays low or medium even when the customer is annoyed. Write them as "
                 "long and detailed as the spec's sentence count asks, with concrete details (order numbers, dates, amounts, plan "
                 "names) like any real ticket, but nothing is blocked, no money is being lost right now and there is no deadline today.")
@@ -69,6 +83,8 @@ class Spec:
     language: str
     sentences: int
     typos: bool
+    max_words: int = 0  # short plan: accept only texts of SHORT_WORDS[0]..max_words words
+    fold: bool = False  # short plan: type without Turkish characters (applied after generation)
 
 
 class SynthTicket(BaseModel):
@@ -155,10 +171,39 @@ def make_control_plan(seed: int, scale: float = 1.0) -> list[Spec]:
     return specs
 
 
+def make_short_plan(seed: int, scale: float = 1.0) -> list[Spec]:
+    """Plan "short": per class, categories round-robin from a random offset, ~30% Turkish (a third of those folded to
+    ASCII), ~25% with typos, one sentence twice as often as two."""
+    rng = random.Random(seed)
+    specs: list[Spec] = []
+    for cls, n0 in SHORT_CLASSES:
+        n = max(1, round(n0 * scale))
+        off = rng.randrange(len(CATEGORIES))
+        cats = [CATEGORIES[(off + k) % len(CATEGORIES)] for k in range(n)]
+        rng.shuffle(cats)
+        if cls == "positive":
+            labels = [(u, "positive") for u in _quota(n, CLASSES["positive"][2], rng)]
+        else:
+            labels = [(cls, t) for t in _quota(n, CLASSES[cls][2], rng)]
+        lang = _quota(n, {"tr": TURKISH_SHARE, "en": 1 - TURKISH_SHARE}, rng)
+        typo = _quota(n, {True: TYPO_SHARE, False: 1 - TYPO_SHARE}, rng)
+        tr = [k for k in range(n) if lang[k] == "tr"]
+        fold = set(rng.sample(tr, round(len(tr) * SHORT_FOLD_SHARE)))
+        for k in range(n):
+            specs.append(Spec(len(specs), "short", cats[k], labels[k][0], labels[k][1], lang[k], rng.choice((1, 1, 2)), typo[k],
+                              max_words=SHORT_WORDS[1], fold=k in fold))
+    return specs
+
+
+def short_class(urgency: str, sentiment: str) -> str:
+    return "positive" if sentiment == "positive" else urgency
+
+
 def _user(batch: list[Spec], note: str = "") -> str:
     lang = "Turkish" if batch[0].language == "tr" else "English"
     lines = [f"{k + 1}. i={s.i} category={s.category}, urgency={s.urgency}, sentiment={s.sentiment}, sentences={s.sentences}, "
-             f"typos={'yes' if s.typos else 'no'}" for k, s in enumerate(batch)]
+             + (f"words={SHORT_WORDS[0]}-{s.max_words}, " if s.max_words else "")
+             + f"typos={'yes' if s.typos else 'no'}" for k, s in enumerate(batch)]
     head = f"Language: {lang}\n" + (note + "\n" if note else "") + "Write one message per spec, same order, echo i.\n"
     return head + "\n".join(lines)
 
@@ -175,9 +220,9 @@ def _merge(path: Path, new_rows: list[dict], plan: str, seed: int) -> int:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--plan", choices=["minority", "control"], default="minority")
+    ap.add_argument("--plan", choices=["minority", "control", "short"], default="minority")
     ap.add_argument("--per-class", type=int, default=120, help="minority plan: messages per class")
-    ap.add_argument("--scale", type=float, default=1.0, help="control plan: multiply the 80/40/60/60 cell counts")
+    ap.add_argument("--scale", type=float, default=1.0, help="control / short plan: multiply the cell or class counts")
     ap.add_argument("--seed", type=int, default=SEED)
     ap.add_argument("--delay", type=float, default=0.3, help="seconds between verification calls")
     ap.add_argument("--max-usd", type=float, default=0.15, help="stop starting new calls once this plan has spent this much")
@@ -196,9 +241,12 @@ def main() -> int:
         specs, size_key, note = make_plan(args.per_class, args.seed), args.per_class, ""
         legacy = args.seed == SEED and out.name == "train_synth.jsonl"
         progress = out.with_name(LEGACY_PROGRESS) if legacy else out.with_name(f"{out.stem}.minority.s{args.seed}.progress.json")
-    else:
+    elif args.plan == "control":
         specs, size_key, note = make_control_plan(args.seed, args.scale), args.scale, CONTROL_NOTE
         progress = out.with_name(f"{out.stem}.control.s{args.seed}.progress.json")
+    else:
+        specs, size_key, note = make_short_plan(args.seed, args.scale), args.scale, SHORT_NOTE
+        progress = out.with_name(f"{out.stem}.short.s{args.seed}.progress.json")
     by_i = {s.i: s for s in specs}
     state = {"plan": args.plan, "size": size_key, "seed": args.seed, "gen": {}, "verify": {},
              "tokens": {"gen_in": 0, "gen_out": 0, "ver_in": 0, "ver_out": 0}, "calls": 0, "repaired": 0}
@@ -251,10 +299,20 @@ def main() -> int:
                 want = {s.i for s in batch}
                 for t in obj.tickets:
                     text = " ".join(t.text.split())
-                    if t.i not in want or str(t.i) in state["gen"] or len(text) < 40 or text in seen_texts:
+                    s = by_i.get(t.i)
+                    if t.i not in want or str(t.i) in state["gen"]:
+                        continue
+                    if s.max_words:  # short plan: word window instead of the 40-character floor; misses come back next round
+                        if not SHORT_WORDS[0] <= len(text.split()) <= s.max_words:
+                            continue
+                        if s.fold:
+                            text = text.translate(FOLD)
+                    elif len(text) < 40:
+                        continue
+                    if text in seen_texts:
                         continue
                     seen_texts.add(text)
-                    state["gen"][str(t.i)] = {"text": text, "model_urgency": t.urgency, "model_sentiment": t.sentiment}
+                    state["gen"][str(t.i)] = {"text": text, "model_urgency": t.urgency, "model_sentiment": t.sentiment, "ascii_folded": s.fold}
                 save()
                 print(f"  gen round {round_ + 1} {lang}: {len(state['gen'])}/{len(specs)} generated | {usage()}", flush=True)
             if over_budget:
@@ -299,6 +357,7 @@ def main() -> int:
             continue
         row = {"id": stable_id(g["text"]), "text": g["text"], "category": s.category, "urgency": s.urgency, "sentiment": s.sentiment,
                "language": s.language, "source": "synthetic", "plan": args.plan, "seed": args.seed, "target_class": s.cls,
+               **({"ascii_folded": True} if g.get("ascii_folded") else {}),
                "gen_model": model, "silver_model": model, "prompt_version": PROMPT_VERSION, "silver_reason": v["reason"]}
         if (v["urgency"], v["sentiment"]) == (s.urgency, s.sentiment):
             kept.append(row)
@@ -310,12 +369,14 @@ def main() -> int:
     _merge(rejected_path, rejected, args.plan, args.seed)
 
     # ---- 4. report ----
-    def cell(s_or_r) -> str:
-        return s_or_r.cls if args.plan == "minority" else f"{s_or_r.urgency}/{s_or_r.sentiment}"
+    def cell(urgency: str, sentiment: str, cls: str) -> str:
+        if args.plan == "minority":
+            return cls
+        return short_class(urgency, sentiment) if args.plan == "short" else f"{urgency}/{sentiment}"
 
-    planned = collections.Counter(cell(s) for s in specs)
-    gen_c = collections.Counter(cell(by_i[int(i)]) for i in state["gen"])
-    kept_c = collections.Counter(r["target_class"] if args.plan == "minority" else f"{r['urgency']}/{r['sentiment']}" for r in kept)
+    planned = collections.Counter(cell(s.urgency, s.sentiment, s.cls) for s in specs)
+    gen_c = collections.Counter(cell(by_i[int(i)].urgency, by_i[int(i)].sentiment, by_i[int(i)].cls) for i in state["gen"])
+    kept_c = collections.Counter(cell(r["urgency"], r["sentiment"], r["target_class"]) for r in kept)
     print(f"\n{args.plan}: {len(kept)} kept, {len(rejected)} rejected; merged into {out} next to {others} rows of other plans; "
           f"{state['calls']} calls, {state['repaired']} repaired; {usage()}")
     print(f"{'cell':16s} planned generated kept dropped")

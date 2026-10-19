@@ -42,7 +42,7 @@ IGNORE = -100
 class TrainConfig:
     model_name: str = "xlm-roberta-base"
     epochs: int = 3
-    max_len: int = 128  # covers p99 (114) of the long synthetic + translated rows; eval/results/train_token_lengths.md
+    max_len: int = 192  # headroom for 6-sentence tickets at inference; p99 of long train rows is 114 (train_token_lengths.md)
     batch_size: int = 32
     eval_batch_size: int = 64
     lr: float = 2e-5
