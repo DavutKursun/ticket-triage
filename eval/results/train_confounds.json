@@ -1,0 +1,136 @@
+{
+  "before": {
+    "en": {
+      "n": 1182,
+      "urgency": {
+        "low": 771,
+        "medium": 217,
+        "high": 119,
+        "urgent": 75
+      },
+      "urgent_high": 0.164,
+      "low_medium": 0.836,
+      "positive": 0.053
+    },
+    "tr": {
+      "n": 80,
+      "urgency": {
+        "low": 20,
+        "medium": 5,
+        "high": 22,
+        "urgent": 33
+      },
+      "urgent_high": 0.688,
+      "low_medium": 0.312,
+      "positive": 0.312
+    },
+    "<=16 words": {
+      "n": 991,
+      "urgency": {
+        "low": 725,
+        "medium": 202,
+        "high": 64,
+        "urgent": 0
+      },
+      "urgent_high": 0.065,
+      "low_medium": 0.935,
+      "positive": 0.002
+    },
+    ">16 words": {
+      "n": 271,
+      "urgency": {
+        "low": 66,
+        "medium": 20,
+        "high": 77,
+        "urgent": 108
+      },
+      "urgent_high": 0.683,
+      "low_medium": 0.317,
+      "positive": 0.317
+    },
+    "all": {
+      "n": 1262,
+      "urgency": {
+        "low": 791,
+        "medium": 222,
+        "high": 141,
+        "urgent": 108
+      },
+      "urgent_high": 0.197,
+      "low_medium": 0.803,
+      "positive": 0.07
+    },
+    "targets": {
+      "tr_vs_en_urgent_high_gap_points": 52.4,
+      "tr_gap_ok": false,
+      "long_low_medium_ok": false
+    }
+  },
+  "after": {
+    "en": {
+      "n": 1265,
+      "urgency": {
+        "low": 806,
+        "medium": 265,
+        "high": 119,
+        "urgent": 75
+      },
+      "urgent_high": 0.153,
+      "low_medium": 0.847,
+      "positive": 0.05
+    },
+    "tr": {
+      "n": 406,
+      "urgency": {
+        "low": 254,
+        "medium": 78,
+        "high": 41,
+        "urgent": 33
+      },
+      "urgent_high": 0.182,
+      "low_medium": 0.818,
+      "positive": 0.062
+    },
+    "<=16 words": {
+      "n": 1291,
+      "urgency": {
+        "low": 945,
+        "medium": 263,
+        "high": 83,
+        "urgent": 0
+      },
+      "urgent_high": 0.064,
+      "low_medium": 0.936,
+      "positive": 0.002
+    },
+    ">16 words": {
+      "n": 380,
+      "urgency": {
+        "low": 115,
+        "medium": 80,
+        "high": 77,
+        "urgent": 108
+      },
+      "urgent_high": 0.487,
+      "low_medium": 0.513,
+      "positive": 0.226
+    },
+    "all": {
+      "n": 1671,
+      "urgency": {
+        "low": 1060,
+        "medium": 343,
+        "high": 160,
+        "urgent": 108
+      },
+      "urgent_high": 0.16,
+      "low_medium": 0.84,
+      "positive": 0.053
+    },
+    "targets": {
+      "tr_vs_en_urgent_high_gap_points": 2.9,
+      "tr_gap_ok": true,
+      "long_low_medium_ok": true
+    }
+  }
+}

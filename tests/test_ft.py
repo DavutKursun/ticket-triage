@@ -80,3 +80,30 @@ def test_tiny_config_and_model_shapes():
     logits = model(ids, torch.ones_like(ids))
     assert [tuple(x.shape) for x in logits] == [(3, 11), (3, 4), (3, 3)]
     assert sum(p.numel() for p in model.parameters()) < 200_000
+
+
+def test_export_parity_tiny(tmp_path):
+    """fp32 ONNX matches PyTorch, int8 runs with the same shapes, dynamic batch and sequence axes work."""
+    pytest.importorskip("onnxruntime")
+    import sys
+    from pathlib import Path
+
+    from transformers import PreTrainedTokenizerFast
+
+    root = Path(__file__).resolve().parents[1]
+    sys.path.insert(0, str(root / "scripts"))
+    import export_onnx as ex
+
+    tok = PreTrainedTokenizerFast(tokenizer_file=str(root / "tests" / "fixtures" / "tiny_onnx" / "tokenizer.json"), bos_token="<s>",
+                                  eos_token="</s>", unk_token="<unk>", pad_token="<pad>", cls_token="<s>", sep_token="</s>", mask_token="<mask>")
+    torch.manual_seed(0)
+    model = TriageModel(tokenizer=tok, tiny=True).eval()
+    info = ex.export_fp32(model, tok, tmp_path / "model.onnx", 17, 128)
+    assert info["shape_check_max_abs_diff"] < 1e-4
+    texts = ["refund please", "Siparişim hâlâ gelmedi, iade istiyorum!", "i was charged twice for order 48213, i need it back today " * 4]
+    ref = ex.torch_logits(model, tok, texts, 128)
+    assert ex.max_abs(ref, ex.ort_logits(ex.ort_session(tmp_path / "model.onnx"), tok, texts, 128))["all"] < 1e-4
+    ex.quantize(tmp_path / "model.onnx", tmp_path / "model.int8.onnx", "QInt8", False)
+    q = ex.ort_logits(ex.ort_session(tmp_path / "model.int8.onnx"), tok, texts, 128)
+    assert {t: v.shape for t, v in q.items()} == {t: v.shape for t, v in ref.items()} == {"category": (3, 11), "urgency": (3, 4), "sentiment": (3, 3)}
+    assert (tmp_path / "model.int8.onnx").stat().st_size < (tmp_path / "model.onnx").stat().st_size

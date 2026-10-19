@@ -6,9 +6,10 @@ Section 0 says where we are and what changed from the original plan.
 
 ## 0. Status (updated 2026-10-19)
 
-**M3 part 1 of 3 is done: synthetic train rows + multi-task fine-tuning code, smoke-tested locally (24 tests in the
-main venv + 5 torch tests in `.venv-train`, no network). Next is M3-2: ONNX export, `ft_engine.py`, Kaggle notebook
-(see "Next"). Milestone 1's last third (Davut's hand-check and hard-set pass) runs in parallel.**
+**M3 part 2 of 3 is done: de-biased train augmentation, ONNX export, the ONNX serving engine and the Kaggle notebook,
+all smoke-tested locally end to end (32 tests in the main venv, 37 in `.venv-train`, no network). Next is M3-3: Davut
+runs the notebook on Kaggle (runbook in "Next"), then the dev evaluation of the fine-tuned engine. Milestone 1's last
+third (Davut's hand-check and hard-set pass) runs in parallel.**
 
 Deviations from the original spec:
 - Silver labels come from **`claude-haiku-5-5`** (`LLM_PROVIDER=anthropic`, `messages.parse` + Pydantic, one repair
@@ -33,11 +34,21 @@ Deviations from the original spec:
   (urgency ≈73% low / 22% medium / 7% high; sentiment ≈89% neutral). The hard set must supply those classes for
   evaluation; for training, `scripts/make_synth.py` added 272 TRAIN-ONLY synthetic rows (108 urgent, 77 high,
   87 positive; Haiku-written from the rubric, kept only when the silver labeller agrees blind; 88 rejected; $0.12)
-  in `data/silver/train_synth.jsonl` (`source="synthetic"`). Never in dev, test or the hard set.
-- Fine-tuning runs in a separate `.venv-train` (`requirements-train.txt`, CPU torch, pinned); torch never enters
-  the main venv, and `tests/test_ft.py` skips there. The local smoke test uses `train.py --tiny` (2-layer random
+  in `data/silver/train_synth.jsonl` (`source="synthetic"`, plan "minority"). Never in dev, test or the hard set.
+- M3-2 removed a language/length shortcut those rows created (Turkish rows were 69% urgent+high vs 16% English; only
+  32% of >16-word rows were low/medium): plan "control" added 109 long calm low/medium rows (240 planned, the labeller
+  disagreed on low vs medium for most rejects; $0.085) and `scripts/translate_train.py` 300 Turkish translations of
+  silver train rows (labels carried over, 60 without Turkish characters; $0.012). After: Turkish 18% vs English 15%
+  urgent+high, >16-word rows 51% low/medium (`eval/results/train_confounds.md`). Still no short urgent row anywhere.
+- Fine-tuning runs in a separate `.venv-train` (`requirements-train.txt`, CPU torch, pinned, no optimum); torch never
+  enters the main venv, and `tests/test_ft.py` skips there. Local smoke tests use `train.py --tiny` (2-layer random
   XLM-R built from the tokenizer-only `hf-internal-testing/tiny-random-xlm-roberta`); Kaggle uses
-  `--model-name xlm-roberta-base`. On Kaggle install only the non-torch lines of `requirements-train.txt`.
+  `--model-name xlm-roberta-base` and installs `requirements-kaggle.txt` (never torch). max_len 128 covers p99 (114)
+  of the long synthetic/translated rows (`eval/results/train_token_lengths.md`).
+- ONNX export uses `torch.onnx.export` directly (the default dynamo exporter needs onnxscript, so it falls back to
+  `dynamo=False`) + onnxruntime `quantize_dynamic`; optimum is not used. Serving needs only onnxruntime + tokenizers.
+- Hub repo `DavutKursun/ticket-triage-xlmr` (public, empty until the Kaggle push) was created with Davut's existing
+  login; the Kaggle push uses a separate fine-grained token stored only as a Kaggle Secret.
 
 Implemented:
 - `ticket_triage/config.py` (incl. `LLM_REASONING_EFFORT`), `schema.py` (Triage / SilverLabel / TriageResponse,
@@ -62,26 +73,53 @@ Implemented:
 - `ticket_triage/ft_model.py` (TriageModel = encoder + dropout + heads 11/4/3 on the first token; labels -100 where
   missing; loss = CE + masked CE + masked CE with inverse-sqrt class weights; labelled rows oversampled ×4; AdamW
   2e-5, 6% warmup, fp16 on CUDA, batch 32, 3 epochs, seed 7; per-epoch dev eval, best epoch by mean macro-F1;
-  saves safetensors + encoder config + tokenizer + labels.json + ft_config.json + dev_metrics.json; `load_model`),
-  `scripts/train.py` (thin wrapper, `--tiny`), `scripts/make_synth.py`. Real run: 19,911 train rows, 1,262
-  labelled, effective epoch 23,697 rows = 741 steps, 2,223 steps for 3 epochs.
-- `tests/test_core.py` (24 tests: FakeProvider, fake OpenAI client, backoff, Anthropic validation→repair, cache
-  accounting, hand-check template, load_synth), `tests/test_ft.py` (5 torch tests: label masking, loss masking,
-  class weights, oversampler, tiny model shapes; skipped without torch), CI, Makefile (`synth`, `train-smoke`),
-  requirements split (core / full / dev / train)
-- NOT yet: `ft_engine.py`, `export_onnx.py`, `bench_latency.py`, notebook, the real training run, FastAPI routes,
-  Gradio, Dockerfile.
+  saves safetensors + encoder config + tokenizer + labels.json + ft_config.json + dev_metrics.json; `load_model`;
+  hard-dev metrics per epoch when `data/hard/hard.csv` exists, report only), `scripts/train.py` (thin wrapper,
+  `--tiny`, `--no-synth`, `--no-translated`, writes `train_meta.json`), `scripts/make_synth.py` (plans minority +
+  control), `translate_train.py`, `train_confounds.py`, `token_lengths.py`. Real run: 20,320 train rows, 1,671
+  labelled, effective epoch 25,333 rows = 792 steps, 2,376 steps for 3 epochs.
+- `scripts/export_onnx.py` (fp32 to `fp32/`, int8 to `onnx/` with tokenizer.json + labels.json + ft_config.json,
+  QInt8 → per-channel → QUInt8 ladder at 98% category agreement, `export_report.json` with parity, sizes, tokenizer
+  parity, CPU latency), `ticket_triage/ft_engine.py` (FTEngine: local folder or Hub repo id, `classify` /
+  `classify_batch`, TriageResponse + per-head probabilities, `FT_THREADS`), engine `finetuned` in `eval.py`
+  (`--engine finetuned --ft-model …`), `scripts/model_card.py`, `notebooks/train_kaggle.ipynb` (+ `scripts/notebook_smoke.py`
+  runs its cells locally), `requirements-kaggle.txt`. Tiny smoke export: fp32 max |Δlogit| 4.8e-7, int8 agreement
+  100%, tokenizer parity 607/607 (406 Turkish), serving folder 0.52 MB.
+- `tests/test_core.py` (24 tests), `tests/test_ft_engine.py` (8 tests on the committed 0.52 MB fixture
+  `tests/fixtures/tiny_onnx/`: schema, probabilities sum to 1, batch == single, 5,000-character input, Turkish, empty
+  input, tokenizer ids vs transformers, folder resolution), `tests/test_ft.py` (6 torch tests incl. export parity;
+  skipped without torch), CI, Makefile (`synth`, `translate`, `train-smoke`, `export-smoke`, `notebook-smoke`,
+  `eval-ft-dev`), requirements split (core / full / dev / train / kaggle)
+- NOT yet: the real training run, `bench_latency.py`, fine-tuned dev results, FastAPI routes, Gradio, Dockerfile.
 
-**Next (M3-2):** `scripts/export_onnx.py` (optimum ONNX export of the saved TriageModel + int8 dynamic quantisation;
-verify ONNX vs PyTorch logits on a few dev rows), `ticket_triage/ft_engine.py` (ONNX inference with the PyTorch model
-as fallback, same `classify`/`respond` interface as the other engines, confidence = category softmax max), and
-`notebooks/train_kaggle.ipynb` (installs the non-torch lines of `requirements-train.txt`, clones the repo, runs
-`ticket_triage.ft_model.train` with `--model-name xlm-roberta-base`, saves the model as a Kaggle output). Then M3-3:
-the real T4 run, `bench_latency.py`, dev results, model + card on Davut's Hugging Face account. Fall back to three
-sequential heads if multi-task misbehaves. **In parallel (M1 3/3, Davut):** fill `data/handcheck/{dev,test}_100.csv`
-without looking at the silver columns → `python scripts/agreement.py` (target κ ≥ 0.75; below that refine the rubric
-once, bump `PROMPT_VERSION`, relabel); edit/label `data/hard/hard_draft.csv` per `data/hard/REVIEW.md` →
-`data/hard/hard.csv`. The test split and the hard set stay untouched until M4.
+**Next (M3-3): the real run on Kaggle, click by click (Davut)**
+1. One time, Hugging Face: huggingface.co → avatar → Settings → Access Tokens → **Create new token** → type
+   **Fine-grained** → name `kaggle-ticket-triage` → under *Repositories permissions* search and add
+   `DavutKursun/ticket-triage-xlmr` and tick **Write access to contents/settings of selected repos** → Create →
+   copy the token (shown once; paste it only into Kaggle, never into a chat or a file).
+2. One time, Kaggle: the account must be phone-verified (Settings → Phone verification), otherwise GPU and Internet stay
+   greyed out.
+3. kaggle.com → **Create → New Notebook** → menu **File → Import Notebook** → **GitHub** tab (or *Link*) → paste
+   `https://github.com/DavutKursun/ticket-triage/blob/main/notebooks/train_kaggle.ipynb` → **Import**.
+4. Right sidebar → **Session options**: **Accelerator → GPU T4 x2** (one GPU is used), **Internet → On**.
+5. Menu **Add-ons → Secrets → Add Secret**: Label `HF_TOKEN`, Value = the token → Save, and make sure the
+   **Attached** box next to `HF_TOKEN` is ticked for this notebook.
+6. Top right **Save Version** → Version type **Save & Run All (Commit)** → **Save**. Close the tab if you like: it runs
+   headless. Expected runtime 20–35 min (pip ~2, model download ~1, training ~10–15 on one T4, CPU export ~5,
+   push ~2); it uses well under 1 h of the 30 h weekly GPU quota.
+7. Done when the version shows **Complete** and the last cell prints `pushed to https://huggingface.co/DavutKursun/ticket-triage-xlmr`.
+   Check the repo has `onnx/model.int8.onnx`, `README.md`, `dev_metrics.json`, `export_report.json`. If the secret was
+   missing the cell lists the files to download from the version's **Output** tab (folder `model/`) instead.
+   On an error: open the version → **Logs**, copy the failing cell's output for Claude.
+8. Locally (main venv, no torch): `make eval-ft-dev`, i.e.
+   `.venv/bin/python scripts/eval.py --split dev --engine finetuned --ft-model DavutKursun/ticket-triage-xlmr` —
+   downloads only `onnx/` (int8, ≈ 280 MB) into the Hugging Face cache and scores the 495 silver dev rows; results in
+   `eval/results/dev-finetuned.json`. Without a push: put the downloaded `model/onnx/` folder at `models/ft/onnx` and
+   pass `--ft-model models/ft/onnx`. Then M3-3 continues with `bench_latency.py`, dev results in the README and DESIGN.md.
+**In parallel (M1 3/3, Davut):** fill `data/handcheck/{dev,test}_100.csv` without looking at the silver columns →
+`python scripts/agreement.py` (target κ ≥ 0.75; below that refine the rubric once, bump `PROMPT_VERSION`, relabel);
+edit/label `data/hard/hard_draft.csv` per `data/hard/REVIEW.md` → `data/hard/hard.csv`. Never stage those files from
+Claude's side. The test split and the hard set's test half stay untouched until M4.
 
 macOS notes: Python 3.11 venvs; torch lives only in `.venv-train` (CPU wheels) — never install requirements-train.txt
 into the main `.venv`.

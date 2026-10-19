@@ -58,11 +58,12 @@ class SilverLabel(BaseModel):
 
 
 class TriageResponse(Triage):
-    """API response: Triage plus provenance."""
+    """API response: Triage plus provenance. ``probabilities`` (fine-tuned engine): per head, label -> probability."""
 
     model: str
     engine: Literal["finetuned", "llm", "baseline"]
     latency_ms: float
+    probabilities: dict[str, dict[str, float]] | None = None
 
 
 def json_schema(model: type[BaseModel]) -> dict:

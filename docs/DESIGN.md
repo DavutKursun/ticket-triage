@@ -69,17 +69,64 @@ so the two data problems stay visible:
   weights (normalised to mean 1, `--no-class-weights` to disable) soften the remaining imbalance.
   Run of 2026-10-19: 360 planned (120 per class, 30% Turkish), 272 kept, 88 rejected, $0.12. Kept: urgent 108/120,
   high 77/120, positive 87/120. The labeller mostly disagreed on tone (planned neutral, read as negative) and on
-  medium vs low for positive rows; rejected rows stay in `train_synth.rejected.jsonl` for inspection. With them the
-  real run sees 19,911 train rows, 1,262 with urgency/sentiment (urgency 791 low / 222 medium / 141 high / 108
-  urgent; sentiment 933 neutral / 241 negative / 88 positive) and an effective epoch of 23,697 rows = 741 steps.
+  medium vs low for positive rows; rejected rows stay in `train_synth.rejected.jsonl` for inspection.
+- **Language and length shortcut (M3-2).** After M3-1 every Turkish and every >16-word labelled train row was synthetic
+  and urgent/high/positive: Turkish rows were 69% urgent+high and 31% positive (English 16% / 5%), and only 32% of the
+  >16-word rows were low/medium. A model could learn "Turkish or long ⇒ urgent/positive", which is exactly the hard
+  set's profile. Two train-only fixes (`eval/results/train_confounds.md`, `scripts/train_confounds.py`):
+  - plan `control` in `make_synth.py`: 240 messages in the same style, length and language mix with the ordinary label
+    mix (80 low/neutral, 40 low/negative, 60 medium/neutral, 60 medium/negative), same blind verification. Only 109 were
+    kept ($0.085): the silver labeller moved 54 planned-low rows to medium, 21 medium to low and 24 to high, and kept
+    just 7 of 40 low/negative — the low/medium boundary on long, annoyed tickets is the fuzziest part of the rubric,
+    worth watching in the hand-check;
+  - `scripts/translate_train.py`: 300 silver train rows (27–28 per category, urgency in proportion) translated into
+    customer-style Turkish by Haiku, labels carried over, 60 typed without Turkish characters ($0.012, 0 rejected).
+  After: Turkish urgent+high 18% vs English 15% (gap 2.9 points, target ≤ 10) and positive 6% vs 5%; >16-word rows 51%
+  low/medium (target ≥ 40%). No top-up was needed. Still open: no short (≤16-word) urgent row exists anywhere in train
+  (Bitext has none and neither do its translations), so "short ⇒ not urgent" remains learnable; the hard set is long,
+  so it does not reward that shortcut, but real one-line urgent tickets may be under-called.
+- **Real run data.** 20,320 train rows (19,639 Bitext + 381 synthetic + 300 translated), 1,671 with urgency/sentiment
+  (urgency 1,060 low / 343 medium / 160 high / 108 urgent; sentiment 1,268 neutral / 315 negative / 88 positive),
+  effective epoch 25,333 rows = 792 steps, 2,376 steps for 3 epochs. `--no-synth` / `--no-translated` drop either part.
+- **max_len 128.** xlm-roberta-base token counts (`eval/results/train_token_lengths.md`, incl. special tokens): Bitext
+  p99 21, synthetic English p99 123 (max 144), synthetic Turkish p99 110, translated p99 23; the non-Bitext p99 is 114,
+  so 128 is the smallest of 128/192/256 that covers it (2 of 681 augmented rows are truncated). The same value is stored
+  in ft_config.json and used at inference. Six-sentence hard-set tickets may run longer; `--max-len 192` is the lever.
 - Training: AdamW 2e-5, 6% warmup, fp16 on CUDA, batch 32, 3 epochs, fixed seed; after each epoch category on the
   full dev split and urgency/sentiment on the silver dev rows (macro-F1 over classes present); best epoch = mean of
-  the three macro-F1s. Saved: safetensors state dict, encoder config, tokenizer, `labels.json`, `dev_metrics.json`.
+  the three macro-F1s. When `data/hard/hard.csv` exists its dev half is scored every epoch as well (report only, never
+  used for selection). Saved: safetensors state dict, encoder config, tokenizer, `labels.json`, `dev_metrics.json`;
+  `train.py` adds `train_meta.json` (git commit, GPU, torch/transformers/CUDA versions, wall time, peak GPU memory).
 - The Kaggle run is not the first run: `make train-smoke` (`train.py --tiny`) builds a seeded 2-layer, 32-wide random
   XLM-R locally (`XLMRobertaConfig` sized to the tokenizer-only repo `hf-internal-testing/tiny-random-xlm-roberta`,
   no weights download) and trains it on 64 rows in the separate `.venv-train` (CPU torch, pinned); it must save a
-  model and `dev_metrics.json`. Kaggle runs `--model-name xlm-roberta-base` unchanged. Export (M3-2): ONNX + int8 dynamic
-  quantisation via optimum; latency measured batch 1 and 32 on CPU.
+  model and `dev_metrics.json`. Kaggle runs `--model-name xlm-roberta-base` unchanged; `make notebook-smoke` executes
+  the Kaggle notebook's own cells locally with the tiny model (no clone, pip or push).
+
+### ONNX export and serving (M3-2)
+- `scripts/export_onnx.py` exports the saved module (PyTorch fp32, CPU) with `torch.onnx.export`, opset 17, dynamic
+  batch and sequence axes. The default (dynamo) exporter needs `onnxscript`, which we do not install, so it falls back
+  to `dynamo=False`; whichever exporter wins must match PyTorch within 1e-3 on two input shapes. optimum is not used:
+  a custom three-head module gains nothing from it.
+- int8: `onnxruntime.quantization.quantize_dynamic`, QInt8 weights. MatMuls and the embedding Gather are both
+  quantised, so xlm-roberta-base shrinks from ≈1.1 GB to ≈280 MB. If int8 category argmax agreement with PyTorch on
+  dev is below 98%, the ladder tries per_channel=True, then QUInt8, and keeps the first that passes.
+- `MODEL_DIR/onnx/` is self-contained (model.int8.onnx, tokenizer.json, labels.json, ft_config.json with max_len,
+  pad id, exporter and quantisation); the fp32 file stays in `MODEL_DIR/fp32/` and is never uploaded.
+  `export_report.json` records max |Δlogit| fp32 vs PyTorch, per-head argmax agreement (fp32 and int8), dev macro-F1
+  PyTorch vs int8, file sizes, tokenizer parity (`tokenizers` on tokenizer.json vs the transformers tokenizer on 200 dev
+  texts, every Turkish train row and a 5,000-character input) and batch-1 CPU latency on 2 threads, labelled with the
+  machine it ran on. On the tiny smoke model: fp32 max |Δlogit| 3.6e-7, int8 category agreement 100%, tokenizer
+  parity on every text, serving folder 0.52 MB.
+- `ticket_triage/ft_engine.py` serves `onnx/` with onnxruntime + tokenizers + numpy only (no torch, no transformers),
+  from a local folder or a Hub repo id (downloads `onnx/*` only). It returns the LLM engine's `TriageResponse` plus
+  per-head probabilities; `confidence` is the category probability. Inputs are truncated to the training max_len, so a
+  5,000-character message classifies cleanly; empty input is rejected. Caveat: dynamic quantisation scales
+  activations per batch, so a batched result can differ from the single-message result in the last decimals
+  (5.5e-4 on the fixture). Threads: `FT_THREADS`.
+- Tests: `tests/fixtures/tiny_onnx/` (0.52 MB, the exported smoke model plus transformers' token ids for a
+  cross-version tokenizer check) drives the engine tests in the main venv and CI; `.venv-train` adds an export
+  parity test.
 
 ## Findings
 ### Dev, preliminary (M2) — `eval/results/dev-summary.md`

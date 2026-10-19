@@ -1,0 +1,47 @@
+{
+  "model_name": "hf-internal-testing/tiny-random-xlm-roberta",
+  "epochs": 1,
+  "max_len": 128,
+  "batch_size": 32,
+  "eval_batch_size": 64,
+  "lr": 2e-05,
+  "weight_decay": 0.01,
+  "warmup": 0.06,
+  "dropout": 0.1,
+  "oversample": 4,
+  "class_weights": true,
+  "seed": 7,
+  "limit": 64,
+  "no_synth": false,
+  "no_translated": false,
+  "out": "models/smoke",
+  "fp16": null,
+  "log_every": 50,
+  "tiny": true,
+  "hidden_size": 32,
+  "heads": {
+    "category": 11,
+    "urgency": 4,
+    "sentiment": 3
+  },
+  "onnx_file": "model.int8.onnx",
+  "inputs": [
+    "input_ids",
+    "attention_mask"
+  ],
+  "outputs": [
+    "category",
+    "urgency",
+    "sentiment"
+  ],
+  "opset": 17,
+  "exporter": "torchscript (dynamo=False)",
+  "quantization": {
+    "weight_type": "QInt8",
+    "per_channel": false,
+    "meets_target": true,
+    "method": "onnxruntime quantize_dynamic"
+  },
+  "pad_token": "<pad>",
+  "pad_token_id": 1
+}

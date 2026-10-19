@@ -44,10 +44,12 @@ self-agreement and optimistic. Test set and hard set stay untouched until Milest
 1. **Data** — Bitext customer-support dataset (27k messages, 11 categories, CDLA-Sharing-1.0),
    deduplicated, stratified 80/10/10. Urgency and sentiment do not exist in the data: they are
    **silver labels** from an LLM with a written rubric, and their quality is measured against 200
-   hand-checked examples. Silver train has almost no `urgent` or `positive` rows, so 272 **synthetic
-   train-only** messages (`data/silver/train_synth.jsonl`, written by Haiku from the rubric and kept only when the
-   silver labeller agrees blind) feed the fine-tuned model's urgency/sentiment heads — never dev, test or the
-   hard set. A 300-message **hard set** (long, multi-issue, typos, 20% Turkish) is
+   hand-checked examples. Silver train has almost no `urgent` or `positive` rows, so the fine-tuned model also
+   trains on **train-only augmentation** that never touches dev, test or the hard set: synthetic messages written
+   by Haiku from the rubric and kept only when the silver labeller agrees blind (`data/silver/train_synth.jsonl`;
+   urgent/high/positive rows plus an equal-style control set of long, calm low/medium tickets so that neither
+   language nor length predicts the label) and 300 silver rows translated into Turkish
+   (`data/silver/train_translated.jsonl`). A 300-message **hard set** (long, multi-issue, typos, 20% Turkish) is
    hand-written and hand-labelled, because the public data is templated and too easy.
 2. **Four engines** — TF-IDF baseline · LLM zero-shot · LLM few-shot · fine-tuned encoder
    (multi-task heads, exported to ONNX int8).
@@ -69,13 +71,20 @@ python scripts/eval.py --split dev --engines llm_zero,llm_few,baseline --delay 0
 pytest -q
 # fine-tuning (Milestone 3) lives in a separate venv so torch never enters the main one
 python3.11 -m venv .venv-train && .venv-train/bin/pip install -r requirements-train.txt   # CPU torch, pinned
-make synth          # train-only synthetic rows for urgent / high / positive, verified by the silver labeller
+make synth          # train-only synthetic rows (urgent / high / positive + calm control set), verified blind
+make translate      # 300 silver train rows in customer-style Turkish (train only)
 make train-smoke    # tiny random encoder, 64 rows, 1 epoch: proves the training loop before the Kaggle run
+make export-smoke   # ...then fp32 + int8 ONNX with a parity report (eval/ONNX code path, no GPU)
+make notebook-smoke # runs notebooks/train_kaggle.ipynb's cells locally with the tiny model (no clone, pip or push)
+# the real run: notebooks/train_kaggle.ipynb on a Kaggle T4 pushes to huggingface.co/DavutKursun/ticket-triage-xlmr
+make eval-ft-dev    # int8 ONNX engine from the Hub on the 495 silver dev rows (main venv: onnxruntime + tokenizers only)
 ```
 
 ## Repository
-`ticket_triage/` — schema, rubric (versioned prompts), providers (Groq / Claude), llm_engine, baseline, costs, data ·
-`scripts/` — build_dataset, label_silver, agreement, draft_hard, train_baseline, eval (+ train / export_onnx / bench_latency from M3) ·
+`ticket_triage/` — schema, rubric (versioned prompts), providers (Groq / Claude), llm_engine, baseline, ft_model (training),
+ft_engine (int8 ONNX serving, no torch), costs, data ·
+`scripts/` — build_dataset, label_silver, agreement, draft_hard, train_baseline, eval, make_synth, translate_train,
+train_confounds, token_lengths, train, export_onnx, model_card, notebook_smoke (+ bench_latency in M4) · `notebooks/train_kaggle.ipynb` ·
 `data/` — splits (attributed), silver labels, hand-check CSVs, hard set · `docs/DESIGN.md` · `tests/`
 
 ## License

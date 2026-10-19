@@ -1,15 +1,20 @@
-"""Synthetic TRAIN-ONLY rows for the classes the silver train set lacks: urgent, high, positive.
+"""Synthetic TRAIN-ONLY rows, written by the LLM from the rubric and verified blind by the silver labeller.
 
-Usage: python scripts/make_synth.py [--per-class 120] [--seed 7] [--delay 0.3] [--out data/silver/train_synth.jsonl]
+Usage:
+  python scripts/make_synth.py                      # plan "minority" (M3-1): 120 urgent, 120 high, 120 positive
+  python scripts/make_synth.py --plan control       # plan "control" (M3-2): 240 long calm tickets
+Options: --per-class N (minority) · --scale X (control) · --seed S · --delay s · --max-usd $ · --out path
 
-Plan (deterministic from --seed): per class, categories round-robin over all 11, ~30% Turkish, 2-5 sentences,
-~25% with typos. urgent/high rows get a negative or neutral tone; positive rows get low or medium urgency.
-Haiku writes 10 messages per call from the rubric's exact definitions so the label holds by construction; then
-the regular silver labeller (SILVER_SYSTEM / SILVER_INSTRUCTION / SilverLabel) labels every message blind, and a
-row is kept only when BOTH silver labels equal the constructed ones. Kept rows -> <out> (source="synthetic");
-rejected rows -> <out stem>.rejected.jsonl with the silver labels, for inspection.
-These rows feed the fine-tuned model's urgency/sentiment heads only. They are never part of dev, test or the hard set.
-Resumable: <out stem>.progress.json (gitignored).
+Plans (deterministic from --seed):
+- minority: the classes silver train lacks. urgent/high rows get a negative or neutral tone; positive rows get low or
+  medium urgency. ~30% Turkish, 2-5 sentences, ~25% with typos, categories round-robin over all 11.
+- control: the SAME style, length and language mix, but the ordinary label mix (80 low/neutral, 40 low/negative,
+  60 medium/neutral, 60 medium/negative). It removes the shortcut "Turkish or long => urgent/positive": without it every
+  Turkish and every >16-word train row is an urgent/high/positive one, which is exactly the hard set's profile.
+Haiku writes 10 messages per call; then the regular silver labeller (SILVER_SYSTEM / SILVER_INSTRUCTION / SilverLabel)
+labels every message blind and a row is kept only when BOTH labels equal the constructed ones. Kept rows are merged into
+<out> (source="synthetic", plan, seed, target_class), rejected rows into <out stem>.rejected.jsonl; rows of other plans
+are preserved. Train only: never part of dev, test or the hard set. Resumable via a per-plan progress file (gitignored).
 """
 
 from __future__ import annotations
@@ -31,21 +36,27 @@ from pydantic import BaseModel, Field  # noqa: E402
 
 from ticket_triage.config import SEED, settings  # noqa: E402
 from ticket_triage.costs import cost_usd, format_cost  # noqa: E402
-from ticket_triage.data import stable_id  # noqa: E402
+from ticket_triage.data import read_jsonl, stable_id  # noqa: E402
 from ticket_triage.providers import ProviderError, complete_validated, get_provider, with_backoff  # noqa: E402
 from ticket_triage.rubric import CATEGORY_DEFINITIONS, PROMPT_VERSION, SENTIMENT_RUBRIC, SILVER_INSTRUCTION, SILVER_SYSTEM, URGENCY_RUBRIC  # noqa: E402
 from ticket_triage.schema import CATEGORIES, Sentiment, SilverLabel, Urgency  # noqa: E402
 
-# class -> (fixed label, the other label's mix)
+# minority plan: class -> (fixed task, fixed value, the other label's mix)
 CLASSES = {
     "urgent": ("urgency", "urgent", {"negative": 0.7, "neutral": 0.3}),
     "high": ("urgency", "high", {"negative": 0.5, "neutral": 0.5}),
     "positive": ("sentiment", "positive", {"low": 0.6, "medium": 0.4}),
 }
+# control plan: (urgency, sentiment, count) — the ordinary label mix at the synthetic rows' length and language mix
+CONTROL_CELLS = (("low", "neutral", 80), ("low", "negative", 40), ("medium", "neutral", 60), ("medium", "negative", 60))
+CONTROL_NOTE = ("These are calm-consequence tickets: urgency stays low or medium even when the customer is annoyed. Write them as "
+                "long and detailed as the spec's sentence count asks, with concrete details (order numbers, dates, amounts, plan "
+                "names) like any real ticket, but nothing is blocked, no money is being lost right now and there is no deadline today.")
 TURKISH_SHARE, TYPO_SHARE = 0.30, 0.25
 SENTENCE_CHOICES = (2, 3, 3, 4, 5)
 BATCH = 10
 GEN_MAX_TOKENS = 16000
+LEGACY_PROGRESS = "train_synth.progress.json"  # the M3-1 minority run (seed 7)
 
 
 @dataclass
@@ -112,6 +123,7 @@ def _quota(n: int, shares: dict, rng: random.Random) -> list:
 
 
 def make_plan(per_class: int, seed: int) -> list[Spec]:
+    """Plan "minority" (M3-1): unchanged so the committed rows stay reproducible."""
     rng = random.Random(seed)
     specs: list[Spec] = []
     for cls, (fixed_task, fixed_value, other_mix) in CLASSES.items():
@@ -126,18 +138,49 @@ def make_plan(per_class: int, seed: int) -> list[Spec]:
     return specs
 
 
-def _user(batch: list[Spec]) -> str:
+def make_control_plan(seed: int, scale: float = 1.0) -> list[Spec]:
+    """Plan "control": per label cell, categories round-robin from a random offset and language/typo quotas, so every
+    cell has the same ~30% Turkish and length mix as the minority rows."""
+    rng = random.Random(seed)
+    specs: list[Spec] = []
+    for urg, sent, n0 in CONTROL_CELLS:
+        n = max(1, round(n0 * scale))
+        off = rng.randrange(len(CATEGORIES))
+        cats = [CATEGORIES[(off + k) % len(CATEGORIES)] for k in range(n)]
+        rng.shuffle(cats)
+        lang = _quota(n, {"tr": TURKISH_SHARE, "en": 1 - TURKISH_SHARE}, rng)
+        typo = _quota(n, {True: TYPO_SHARE, False: 1 - TYPO_SHARE}, rng)
+        for k in range(n):
+            specs.append(Spec(len(specs), "control", cats[k], urg, sent, lang[k], rng.choice(SENTENCE_CHOICES), typo[k]))
+    return specs
+
+
+def _user(batch: list[Spec], note: str = "") -> str:
     lang = "Turkish" if batch[0].language == "tr" else "English"
     lines = [f"{k + 1}. i={s.i} category={s.category}, urgency={s.urgency}, sentiment={s.sentiment}, sentences={s.sentences}, "
              f"typos={'yes' if s.typos else 'no'}" for k, s in enumerate(batch)]
-    return f"Language: {lang}\nWrite one message per spec, same order, echo i.\n" + "\n".join(lines)
+    head = f"Language: {lang}\n" + (note + "\n" if note else "") + "Write one message per spec, same order, echo i.\n"
+    return head + "\n".join(lines)
+
+
+def _merge(path: Path, new_rows: list[dict], plan: str, seed: int) -> int:
+    """Replace this (plan, seed)'s rows in path, keep every other plan's rows. Rows written before plans existed count
+    as ("minority", 7)."""
+    keep = [r for r in read_jsonl(path) if (r.get("plan", "minority"), r.get("seed", 7)) != (plan, seed)]
+    with path.open("w", encoding="utf-8") as fh:
+        for r in keep + new_rows:
+            fh.write(json.dumps(r, ensure_ascii=False) + "\n")
+    return len(keep)
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--per-class", type=int, default=120)
+    ap.add_argument("--plan", choices=["minority", "control"], default="minority")
+    ap.add_argument("--per-class", type=int, default=120, help="minority plan: messages per class")
+    ap.add_argument("--scale", type=float, default=1.0, help="control plan: multiply the 80/40/60/60 cell counts")
     ap.add_argument("--seed", type=int, default=SEED)
     ap.add_argument("--delay", type=float, default=0.3, help="seconds between verification calls")
+    ap.add_argument("--max-usd", type=float, default=0.15, help="stop starting new calls once this plan has spent this much")
     ap.add_argument("--out", default="data/silver/train_synth.jsonl")
     ap.add_argument("--rounds", type=int, default=3, help="extra generation passes for specs the model skipped")
     args = ap.parse_args()
@@ -148,37 +191,52 @@ def main() -> int:
         return 2
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    progress = out.with_suffix(".progress.json")
     rejected_path = out.with_name(out.stem + ".rejected.jsonl")
-    specs = make_plan(args.per_class, args.seed)
+    if args.plan == "minority":
+        specs, size_key, note = make_plan(args.per_class, args.seed), args.per_class, ""
+        legacy = args.seed == SEED and out.name == "train_synth.jsonl"
+        progress = out.with_name(LEGACY_PROGRESS) if legacy else out.with_name(f"{out.stem}.minority.s{args.seed}.progress.json")
+    else:
+        specs, size_key, note = make_control_plan(args.seed, args.scale), args.scale, CONTROL_NOTE
+        progress = out.with_name(f"{out.stem}.control.s{args.seed}.progress.json")
     by_i = {s.i: s for s in specs}
-    state = {"per_class": args.per_class, "seed": args.seed, "gen": {}, "verify": {}, "tokens": {"gen_in": 0, "gen_out": 0, "ver_in": 0, "ver_out": 0}, "calls": 0, "repaired": 0}
+    state = {"plan": args.plan, "size": size_key, "seed": args.seed, "gen": {}, "verify": {},
+             "tokens": {"gen_in": 0, "gen_out": 0, "ver_in": 0, "ver_out": 0}, "calls": 0, "repaired": 0}
     if progress.exists():
         saved = json.loads(progress.read_text(encoding="utf-8"))
-        if (saved.get("per_class"), saved.get("seed")) == (args.per_class, args.seed):
-            state = saved
-            print(f"resuming: {len(state['gen'])} generated, {len(state['verify'])} verified")
+        same = (saved.get("plan", "minority"), saved.get("size", saved.get("per_class")), saved.get("seed")) == (args.plan, size_key, args.seed)
+        if same:
+            state.update(saved)
+            print(f"resuming {args.plan}: {len(state['gen'])} generated, {len(state['verify'])} verified")
 
     def save() -> None:
         progress.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
 
+    def spent() -> float:
+        t = state["tokens"]
+        return cost_usd(model, t["gen_in"] + t["ver_in"], t["gen_out"] + t["ver_out"])
+
     def usage() -> str:
         t = state["tokens"]
-        return (f"gen {t['gen_in']}/{t['gen_out']} + verify {t['ver_in']}/{t['ver_out']} tokens, cost "
-                f"{format_cost(model, cost_usd(model, t['gen_in'] + t['ver_in'], t['gen_out'] + t['ver_out']))}")
+        return f"gen {t['gen_in']}/{t['gen_out']} + verify {t['ver_in']}/{t['ver_out']} tokens, cost {format_cost(model, spent())}"
 
+    over_budget = False
     # ---- 1. generation, 10 specs per call, grouped by language ----
     seen_texts = {g["text"] for g in state["gen"].values()}
     for round_ in range(args.rounds):
         pending = [s for s in specs if str(s.i) not in state["gen"]]
-        if not pending:
+        if not pending or over_budget:
             break
         for lang in ("tr", "en"):
             group = [s for s in pending if s.language == lang]
             for b in range(0, len(group), BATCH):
+                if spent() >= args.max_usd:
+                    print(f"budget ${args.max_usd} reached during generation — stopping (progress saved)")
+                    over_budget = True
+                    break
                 batch = group[b : b + BATCH]
                 try:
-                    obj, results, rep = with_backoff(partial(complete_validated, provider, GEN_SYSTEM, _user(batch), model, SynthBatch, max_tokens=GEN_MAX_TOKENS))
+                    obj, results, rep = with_backoff(partial(complete_validated, provider, GEN_SYSTEM, _user(batch, note), model, SynthBatch, max_tokens=GEN_MAX_TOKENS))
                 except ProviderError as e:
                     print("API error (progress saved):", e)
                     save()
@@ -199,11 +257,16 @@ def main() -> int:
                     state["gen"][str(t.i)] = {"text": text, "model_urgency": t.urgency, "model_sentiment": t.sentiment}
                 save()
                 print(f"  gen round {round_ + 1} {lang}: {len(state['gen'])}/{len(specs)} generated | {usage()}", flush=True)
+            if over_budget:
+                break
 
     # ---- 2. blind verification with the production silver labeller ----
     todo = [i for i in state["gen"] if i not in state["verify"]]
     print(f"verifying {len(todo)} generated messages with the silver labeller (prompt {PROMPT_VERSION})", flush=True)
     for n, i in enumerate(todo, 1):
+        if spent() >= args.max_usd:
+            print(f"budget ${args.max_usd} reached during verification — unverified rows are left out (progress saved)")
+            break
         s, g = by_i[int(i)], state["gen"][i]
         user = SILVER_INSTRUCTION.format(category=s.category, text=g["text"])
         try:
@@ -228,36 +291,36 @@ def main() -> int:
         time.sleep(args.delay)
     save()
 
-    # ---- 3. keep only rows where both silver labels equal the constructed ones ----
+    # ---- 3. keep only rows where both silver labels equal the constructed ones; merge per (plan, seed) ----
     kept, rejected = [], []
     for i, g in sorted(state["gen"].items(), key=lambda kv: int(kv[0])):
         s, v = by_i[int(i)], state["verify"].get(i)
         if v is None:
             continue
         row = {"id": stable_id(g["text"]), "text": g["text"], "category": s.category, "urgency": s.urgency, "sentiment": s.sentiment,
-               "language": s.language, "source": "synthetic", "target_class": s.cls, "gen_model": model, "silver_model": model,
-               "prompt_version": PROMPT_VERSION, "silver_reason": v["reason"]}
+               "language": s.language, "source": "synthetic", "plan": args.plan, "seed": args.seed, "target_class": s.cls,
+               "gen_model": model, "silver_model": model, "prompt_version": PROMPT_VERSION, "silver_reason": v["reason"]}
         if (v["urgency"], v["sentiment"]) == (s.urgency, s.sentiment):
             kept.append(row)
         else:
             rejected.append({**row, "silver_urgency": v["urgency"], "silver_sentiment": v["sentiment"]})
-    ids = set()
+    ids: set[str] = set()
     kept = [r for r in kept if not (r["id"] in ids or ids.add(r["id"]))]
-    with out.open("w", encoding="utf-8") as fh:
-        for r in kept:
-            fh.write(json.dumps(r, ensure_ascii=False) + "\n")
-    with rejected_path.open("w", encoding="utf-8") as fh:
-        for r in rejected:
-            fh.write(json.dumps(r, ensure_ascii=False) + "\n")
+    others = _merge(out, kept, args.plan, args.seed)
+    _merge(rejected_path, rejected, args.plan, args.seed)
 
     # ---- 4. report ----
-    gen_c = collections.Counter(by_i[int(i)].cls for i in state["gen"])
-    kept_c = collections.Counter(r["target_class"] for r in kept)
-    print(f"\nwrote {out}: {len(kept)} kept, {len(rejected)} rejected -> {rejected_path}; {state['calls']} calls, {state['repaired']} repaired; {usage()}")
-    print("class      planned generated kept dropped")
-    for cls in CLASSES:
-        planned = sum(s.cls == cls for s in specs)
-        print(f"{cls:10s} {planned:7d} {gen_c[cls]:9d} {kept_c[cls]:4d} {gen_c[cls] - kept_c[cls]:7d}")
+    def cell(s_or_r) -> str:
+        return s_or_r.cls if args.plan == "minority" else f"{s_or_r.urgency}/{s_or_r.sentiment}"
+
+    planned = collections.Counter(cell(s) for s in specs)
+    gen_c = collections.Counter(cell(by_i[int(i)]) for i in state["gen"])
+    kept_c = collections.Counter(r["target_class"] if args.plan == "minority" else f"{r['urgency']}/{r['sentiment']}" for r in kept)
+    print(f"\n{args.plan}: {len(kept)} kept, {len(rejected)} rejected; merged into {out} next to {others} rows of other plans; "
+          f"{state['calls']} calls, {state['repaired']} repaired; {usage()}")
+    print(f"{'cell':16s} planned generated kept dropped")
+    for c in planned:
+        print(f"{c:16s} {planned[c]:7d} {gen_c[c]:9d} {kept_c[c]:4d} {gen_c[c] - kept_c[c]:7d}")
     print("kept by language:", dict(collections.Counter(r["language"] for r in kept)),
           "| kept urgency:", dict(collections.Counter(r["urgency"] for r in kept)),
           "| kept sentiment:", dict(collections.Counter(r["sentiment"] for r in kept)))

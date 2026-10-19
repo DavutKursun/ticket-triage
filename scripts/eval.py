@@ -3,6 +3,7 @@
 Usage:
   python scripts/eval.py --split dev --engines llm_zero,llm_few,baseline --delay 0.5
   python scripts/eval.py --split dev --engines baseline --dry-run          # 20 rows, no API
+  python scripts/eval.py --split dev --engine finetuned --ft-model DavutKursun/ticket-triage-xlmr   # ONNX, $0 marginal
 
 Rows: the split's silver-labelled messages (gold category + silver urgency/sentiment, data.labelled()).
 Per engine, predictions stream to eval/results/<split>-<engine>.predictions.jsonl (resumable: done ids are
@@ -41,13 +42,17 @@ TASKS = ("category", "urgency", "sentiment")
 LLM_ENGINES = {"llm_zero": "zero", "llm_few": "few"}
 
 
-def build_engine(name: str):
+def build_engine(name: str, ft_model: str | None = None):
     if name == "baseline":
         return BaselineEngine.load()
+    if name == "finetuned":
+        from ticket_triage.ft_engine import FTEngine
+
+        return FTEngine(ft_model)
     if name in LLM_ENGINES:
         mode = LLM_ENGINES[name]
         return LLMEngine(mode=mode, examples=few_shot_examples(2) if mode == "few" else None)
-    raise SystemExit(f"unknown engine {name!r}; choose from baseline, llm_zero, llm_few")
+    raise SystemExit(f"unknown engine {name!r}; choose from baseline, finetuned, llm_zero, llm_few")
 
 
 def predict_rows(name: str, engine, df: pd.DataFrame, pred_path: Path, delay: float) -> int:
@@ -130,7 +135,7 @@ def score(name: str, engine, df: pd.DataFrame, pred_path: Path, split: str, dela
         }
         out["cache_hit_rate"] = round(float((ok["cache_read_tokens"] > 0).mean()), 3) if len(ok) else 0.0
     else:
-        out["model"] = "tfidf_logreg"
+        out["model"] = getattr(engine, "model_name", "tfidf_logreg")
         out["cost_per_1000_usd"] = {"sync_no_cache": 0.0, "sync_cached": 0.0, "batch_no_cache": 0.0, "batch_cached": 0.0, "priced": False}
     return out
 
@@ -159,7 +164,8 @@ def summary_markdown(results: list[dict], split: str) -> str:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--split", default="dev", choices=["dev", "test"])
-    ap.add_argument("--engines", default="baseline", help="comma list of baseline,llm_zero,llm_few")
+    ap.add_argument("--engines", "--engine", default="baseline", help="comma list of baseline,finetuned,llm_zero,llm_few")
+    ap.add_argument("--ft-model", default=None, help="finetuned engine: exported folder or Hub repo id (default FT_MODEL_ID, else models/ft/onnx)")
     ap.add_argument("--delay", type=float, default=0.5, help="seconds between LLM calls")
     ap.add_argument("--limit", type=int, default=0, help="score only the first N rows (smoke tests)")
     ap.add_argument("--dry-run", action="store_true", help="20 rows, no LLM engines")
@@ -183,7 +189,7 @@ def main() -> int:
     results = []
     for name in engines:
         try:
-            engine = build_engine(name)
+            engine = build_engine(name, args.ft_model)
         except (ProviderError, FileNotFoundError) as e:
             print(f"{name}: not available: {e}")
             return 2

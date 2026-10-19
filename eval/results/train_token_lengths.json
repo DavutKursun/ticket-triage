@@ -1,0 +1,54 @@
+{
+  "tokenizer": "xlm-roberta-base",
+  "groups": {
+    "bitext / en": {
+      "n": 19639,
+      "p50": 13,
+      "p95": 18,
+      "p99": 21,
+      "max": 30
+    },
+    "synthetic / en": {
+      "n": 275,
+      "p50": 65,
+      "p95": 104,
+      "p99": 123,
+      "max": 144
+    },
+    "synthetic / tr": {
+      "n": 106,
+      "p50": 57,
+      "p95": 92,
+      "p99": 110,
+      "max": 117
+    },
+    "translated / tr": {
+      "n": 300,
+      "p50": 14,
+      "p95": 21,
+      "p99": 23,
+      "max": 29
+    }
+  },
+  "non_bitext": {
+    "n": 681,
+    "p50": 46,
+    "p95": 94,
+    "p99": 114,
+    "max": 144
+  },
+  "all": {
+    "n": 20320,
+    "p50": 13,
+    "p95": 19,
+    "p99": 61,
+    "max": 144
+  },
+  "recommended_max_len": 128,
+  "truncated_at_recommended": {
+    "bitext / en": 0,
+    "synthetic / en": 2,
+    "synthetic / tr": 0,
+    "translated / tr": 0
+  }
+}

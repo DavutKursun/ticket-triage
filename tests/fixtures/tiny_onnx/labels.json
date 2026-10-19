@@ -1,0 +1,26 @@
+{
+  "category": [
+    "account",
+    "cancel",
+    "contact",
+    "delivery",
+    "feedback",
+    "invoice",
+    "order",
+    "payment",
+    "refund",
+    "shipping",
+    "subscription"
+  ],
+  "urgency": [
+    "low",
+    "medium",
+    "high",
+    "urgent"
+  ],
+  "sentiment": [
+    "negative",
+    "neutral",
+    "positive"
+  ]
+}

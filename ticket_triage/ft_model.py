@@ -1,13 +1,15 @@
 """Approach C: xlm-roberta-base with three classification heads (multi-task), shared by scripts/train.py and the
 Kaggle notebook. A plain PyTorch loop (no Trainer) so label masking and oversampling stay explicit.
 
-Data: category is gold on every train row; urgency/sentiment are silver on ~990 train rows plus the synthetic
-train-only rows (data/silver/train_synth.jsonl). Missing labels are -100 and ignored by the loss. Rows that carry
+Data (data.train_rows): category is gold on every train row; urgency/sentiment are silver on ~990 train rows plus the
+train-only synthetic rows (data/silver/train_synth.jsonl, plans "minority" and "control") and the train-only Turkish
+translations (data/silver/train_translated.jsonl). Missing labels are -100 and ignored by the loss. Rows that carry
 urgency/sentiment are oversampled ×cfg.oversample per epoch so the two small heads get enough updates.
 Loss = CE(category) + CE(urgency, w) + CE(sentiment, w) with w = inverse-sqrt class frequency normalised to mean 1
 (cfg.class_weights=False disables). After each epoch: category on the full dev split, urgency/sentiment on the silver
-dev rows, macro-F1 over the classes present in the truth; the best epoch is the mean of the three macro-F1s.
-Never reads the test split or the hard set.
+dev rows, macro-F1 over the classes present in the truth; the best epoch is the mean of the three macro-F1s. When
+data/hard/hard.csv exists, its dev half is scored every epoch too (report only, never used for selection).
+Never reads the test split or the hard set's test half.
 Saved to cfg.out: model.safetensors (model.pt fallback), encoder/config.json, tokenizer/, labels.json, ft_config.json,
 dev_metrics.json.
 """
@@ -40,7 +42,7 @@ IGNORE = -100
 class TrainConfig:
     model_name: str = "xlm-roberta-base"
     epochs: int = 3
-    max_len: int = 128
+    max_len: int = 128  # covers p99 (114) of the long synthetic + translated rows; eval/results/train_token_lengths.md
     batch_size: int = 32
     eval_batch_size: int = 64
     lr: float = 2e-5
@@ -52,6 +54,7 @@ class TrainConfig:
     seed: int = 7
     limit: int = 0
     no_synth: bool = False
+    no_translated: bool = False
     out: str = str(MODELS / "ft")
     fp16: bool | None = None  # None = on when CUDA is available
     log_every: int = 50
@@ -175,28 +178,40 @@ class Collator:
         return {"input_ids": enc["input_ids"], "attention_mask": enc["attention_mask"], "labels": torch.tensor(np.stack(ids), dtype=torch.long)}
 
 
-def build_rows(cfg: TrainConfig) -> tuple[list[dict], list[dict], list[dict]]:
-    """Train rows (gold category + silver/synthetic urgency+sentiment where available), dev category rows (full split),
-    dev urgency/sentiment rows (silver). Never touches test or hard. --limit keeps a labelled/unlabelled mix."""
-    from .data import labelled, load_silver, load_split, load_synth
+def _spread(rows: list, k: int) -> list:
+    """k evenly spaced rows, so a --limit sample covers every source and category instead of the first block."""
+    return rows[:: max(1, len(rows) // k)][:k] if k > 0 else []
 
-    silver = {r.id: (r.urgency, r.sentiment) for r in load_silver("train").itertuples()}
-    rows = [{"id": r.id, "text": r.text, "category": r.category, "urgency": silver.get(r.id, ("", ""))[0],
-             "sentiment": silver.get(r.id, ("", ""))[1], "source": "bitext"} for r in load_split("train").itertuples()]
-    if not cfg.no_synth:
-        rows += [{"id": r.id, "text": r.text, "category": r.category, "urgency": r.urgency, "sentiment": r.sentiment, "source": "synthetic"}
-                 for r in load_synth().itertuples()]
+
+def hard_dev_rows() -> list[dict]:
+    """The hard set's DEV half with complete hand labels, or [] when data/hard/hard.csv does not exist yet."""
+    from .data import load_hard
+
+    out = []
+    for r in load_hard("dev").itertuples():
+        c, u, s = (str(v).strip().lower() for v in (r.category, r.urgency, r.sentiment))
+        if c in LABELS["category"] and u in LABELS["urgency"] and s in LABELS["sentiment"] and str(r.text).strip():
+            out.append({"text": r.text, "category": c, "urgency": u, "sentiment": s})
+    return out
+
+
+def build_rows(cfg: TrainConfig) -> tuple[list[dict], list[dict], list[dict], list[dict]]:
+    """Train rows (data.train_rows: Bitext + train-only synthetic/translated), dev category rows (full split), dev
+    urgency/sentiment rows (silver), hard-dev rows (hand labels, report only; [] without hard.csv). Never touches the
+    test split or the hard set's test half. --limit keeps an evenly spread labelled/unlabelled mix."""
+    from .data import labelled, load_split, train_rows
+
+    rows = train_rows(synth=not cfg.no_synth, translated=not cfg.no_translated)
     dev_cat = [{"text": r.text, "category": r.category} for r in load_split("dev").itertuples()]
     dev_us = [{"text": r.text, "urgency": r.urgency, "sentiment": r.sentiment} for r in labelled("dev").itertuples()]
+    hard = hard_dev_rows()
     if cfg.limit:
         lab = [r for r in rows if r["urgency"]]
         unl = [r for r in rows if not r["urgency"]]
         half = min(cfg.limit // 2, len(lab))
-        rows = lab[:half] + unl[: cfg.limit - half]
-        # evenly spaced dev rows so the smoke test sees every category rather than the first block of the sorted split
-        dev_cat = dev_cat[:: max(1, len(dev_cat) // cfg.limit)][: cfg.limit]
-        dev_us = dev_us[:: max(1, len(dev_us) // cfg.limit)][: cfg.limit]
-    return rows, dev_cat, dev_us
+        rows = _spread(lab, half) + _spread(unl, cfg.limit - half)
+        dev_cat, dev_us, hard = _spread(dev_cat, cfg.limit), _spread(dev_us, cfg.limit), _spread(hard, cfg.limit)
+    return rows, dev_cat, dev_us, hard
 
 
 # ----------------------------------------------------------------------------- evaluation
@@ -274,10 +289,15 @@ def train(cfg: TrainConfig) -> dict:
     set_seed(cfg.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     fp16 = cfg.fp16 if cfg.fp16 is not None else device.type == "cuda"
-    rows, dev_cat, dev_us = build_rows(cfg)
+    if cfg.tiny and cfg.max_len > 128:
+        print(f"NOTE: --tiny has 130 position embeddings, so max_len {cfg.max_len} -> 128", flush=True)
+        cfg.max_len = 128
+    rows, dev_cat, dev_us, hard_dev = build_rows(cfg)
     ids = label_ids(rows)
     labelled_mask = ids[:, 1] != IGNORE
     n_lab, n_synth = int(labelled_mask.sum()), sum(r["source"] == "synthetic" for r in rows)
+    by_source = {s: sum(r["source"] == s for r in rows) for s in ("bitext", "synthetic", "translated")}
+    lab_by_source = {s: int(sum(1 for r, m in zip(rows, labelled_mask, strict=True) if m and r["source"] == s)) for s in by_source}
     tokenizer = AutoTokenizer.from_pretrained(cfg.model_name)
     model = TriageModel(cfg.model_name, dropout=cfg.dropout, tokenizer=tokenizer, tiny=cfg.tiny).to(device)
     weights = None
@@ -294,9 +314,10 @@ def train(cfg: TrainConfig) -> dict:
     opt = torch.optim.AdamW(groups, lr=cfg.lr)
     sched = get_linear_schedule_with_warmup(opt, int(cfg.warmup * total_steps), total_steps)
     scaler = torch.amp.GradScaler("cuda") if fp16 else None
-    print(f"device {device} | fp16 {fp16} | {cfg.model_name} | train rows {len(rows)} ({n_lab} with urgency/sentiment, {n_synth} synthetic) | "
-          f"effective epoch size {epoch_size} = {steps_per_epoch} steps × batch {cfg.batch_size} (oversample ×{cfg.oversample}) | "
-          f"dev: {len(dev_cat)} category rows, {len(dev_us)} urgency/sentiment rows | {cfg.epochs} epochs, {total_steps} steps", flush=True)
+    print(f"device {device} | fp16 {fp16} | {cfg.model_name} | max_len {cfg.max_len} | train rows {len(rows)} {by_source} "
+          f"({n_lab} with urgency/sentiment: {lab_by_source}) | effective epoch size {epoch_size} = {steps_per_epoch} steps × batch "
+          f"{cfg.batch_size} (oversample ×{cfg.oversample}) | dev: {len(dev_cat)} category rows, {len(dev_us)} urgency/sentiment rows"
+          f"{f', hard dev {len(hard_dev)} rows (report only)' if hard_dev else ''} | {cfg.epochs} epochs, {total_steps} steps", flush=True)
     if weights:
         print("class weights:", {t: [round(x, 2) for x in w.tolist()] for t, w in weights.items()}, flush=True)
 
@@ -341,16 +362,23 @@ def train(cfg: TrainConfig) -> dict:
         train_loss = {k: round(v / max(n_batches, 1), 4) for k, v in running.items()}
         metrics = evaluate(model, tokenizer, cfg, dev_cat, dev_us, device)
         rec = {"epoch": epoch, "train_loss": train_loss, "dev": metrics, "seconds": round(time.time() - t0, 1), "epoch_size": len(idx), "steps": n_batches}
-        history.append(rec)
         per_task = ", ".join(f"{t} {metrics[t]['macro_f1']}" for t in TASKS if t in metrics)
         print(f"epoch {epoch}: train loss {train_loss['total']} | dev mean macro-F1 {metrics['mean_macro_f1']} ({per_task}) | {rec['seconds']}s", flush=True)
+        if hard_dev:  # report only — never used for model selection
+            rec["hard_dev"] = evaluate(model, tokenizer, cfg, hard_dev, hard_dev, device)
+            hd = rec["hard_dev"]
+            print(f"  hard dev (report only, {len(hard_dev)} rows): mean macro-F1 {hd['mean_macro_f1']} ("
+                  + ", ".join(f"{t} {hd[t]['macro_f1']}" for t in TASKS if t in hd) + ")", flush=True)
+        history.append(rec)
         if best is None or metrics["mean_macro_f1"] > best["dev"]["mean_macro_f1"]:
             best = rec
             save_model(model, tokenizer, out, cfg)
             print(f"  best so far — saved to {out}", flush=True)
         summary = {"config": asdict(cfg), "device": str(device), "fp16": fp16, "train_rows": len(rows), "labelled_rows": n_lab,
-                   "synthetic_rows": n_synth, "effective_epoch_size": epoch_size, "steps_per_epoch": steps_per_epoch,
-                   "epochs": history, "best_epoch": best["epoch"], "best": best["dev"]}
+                   "synthetic_rows": n_synth, "translated_rows": by_source["translated"], "rows_by_source": by_source,
+                   "labelled_by_source": lab_by_source, "effective_epoch_size": epoch_size, "steps_per_epoch": steps_per_epoch,
+                   "hard_dev_rows": len(hard_dev), "epochs": history, "best_epoch": best["epoch"], "best": best["dev"],
+                   "best_hard_dev": best.get("hard_dev")}
         out.mkdir(parents=True, exist_ok=True)
         (out / "dev_metrics.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
     return summary

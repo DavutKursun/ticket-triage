@@ -1,0 +1,12 @@
+# Installed by notebooks/train_kaggle.ipynb on the Kaggle GPU image, which already ships torch, numpy, pandas and
+# scikit-learn. Never install torch here. numpy and pandas stay unpinned: our code uses nothing newer than numpy 1.26 /
+# pandas 2.0. These pins match the local smoke-test environment (.venv-train), so the tokenizer.json and the int8 ONNX
+# file are produced by the same versions that were tested and that the serving engine loads.
+transformers==4.57.6
+tokenizers==0.22.2
+safetensors==0.8.0
+sentencepiece==0.2.2
+onnx==1.23.2
+onnxruntime==1.31.0
+huggingface_hub==0.36.2
+pydantic>=2.7   # ticket_triage.schema uses the pydantic v2 API; a floor, not a pin
