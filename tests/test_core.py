@@ -6,9 +6,18 @@ from pydantic import ValidationError
 
 from ticket_triage.baseline import BaselineEngine
 from ticket_triage.costs import BudgetGuard, cost_per_1000, format_cost
-from ticket_triage.data import dedupe_and_split, stable_id
+from ticket_triage.data import dedupe_and_split, stable_id, write_handcheck_template, write_jsonl
 from ticket_triage.llm_engine import LLMEngine
-from ticket_triage.providers import OpenAICompatProvider, QuotaError, _wrap, complete_validated, get_provider, parse_json_loose
+from ticket_triage.providers import (
+    OpenAICompatProvider,
+    ProviderError,
+    QuotaError,
+    _wrap,
+    complete_validated,
+    get_provider,
+    parse_json_loose,
+    with_backoff,
+)
 from ticket_triage.rubric import CATEGORY_DEFINITIONS, PROMPT_VERSION, TRIAGE_SYSTEM, few_shot_block
 from ticket_triage.schema import CATEGORIES, SilverLabel, Triage, json_schema
 
@@ -59,6 +68,49 @@ def test_quota_error_detected():
 
     assert isinstance(_wrap(E("Rate limit reached ... tokens per day (TPD)")), QuotaError)
     assert not isinstance(_wrap(E("Rate limit reached ... tokens per minute")), QuotaError)
+
+
+def _raiser(exc):
+    def f():
+        raise exc
+
+    return f
+
+
+def test_wrap_records_status_and_transience():
+    class E(Exception):
+        status_code = 429
+        body = None
+
+    e = _wrap(E("rate limit: 50 requests per minute"))
+    assert e.status == 429 and e.transient and not isinstance(e, QuotaError)
+    assert _wrap(ConnectionError("boom")).transient
+    assert not ProviderError("HTTP 400: bad schema", status=400, kind="BadRequestError").transient
+    assert not ProviderError("TypeError: oops", status=None, kind="TypeError").transient
+
+
+def test_with_backoff_retries_transient_only():
+    quiet = {"log": lambda *_: None}
+    calls = {"n": 0}
+    slept: list[float] = []
+
+    def flaky():
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise ProviderError("HTTP 429 (rate_limit_error): requests per minute", status=429)
+        return "ok"
+
+    assert with_backoff(flaky, sleep=slept.append, **quiet) == "ok"
+    assert calls["n"] == 3 and slept == [5.0, 10.0]
+    with pytest.raises(ProviderError, match="401"):
+        with_backoff(_raiser(ProviderError("HTTP 401: bad key", status=401)), sleep=slept.append, **quiet)
+    with pytest.raises(QuotaError):
+        with_backoff(_raiser(QuotaError("HTTP 429: tokens per day", status=429)), sleep=slept.append, **quiet)
+    assert slept == [5.0, 10.0]  # neither of those slept
+    slept.clear()
+    with pytest.raises(ProviderError, match="503"):
+        with_backoff(_raiser(ProviderError("HTTP 503: overloaded", status=503)), max_total_wait=10, sleep=slept.append, **quiet)
+    assert slept == [5.0, 10.0]  # gave up once the wait budget was spent
 
 
 def _fake_openai_client(record: list):
@@ -155,6 +207,21 @@ def test_split_fails_on_unknown_category(tiny_frame):
     bad.loc[0, "category"] = "billing"
     with pytest.raises(ValueError, match="billing"):
         dedupe_and_split(bad[["text", "category", "intent"]])
+
+
+def test_handcheck_template_tops_up_when_urgency_classes_are_rare(tmp_path, tiny_frame, monkeypatch):
+    import ticket_triage.data as d
+
+    for name in ("SPLITS", "SILVER", "HANDCHECK"):
+        monkeypatch.setattr(d, name, tmp_path / name.lower())
+    rows = tiny_frame.to_dict("records")
+    write_jsonl(d.SPLITS / "dev.jsonl", [{k: r[k] for k in ("id", "text", "category", "intent")} for r in rows])
+    write_jsonl(d.SILVER / "dev.jsonl", [{"id": r["id"], "urgency": "low", "sentiment": r["sentiment"], "reason": "", "model": "m", "prompt_version": "v"} for r in rows])
+    p = write_handcheck_template("dev", n=40)  # only "low" exists: stratified pick gives 10, top-up fills to 40
+    df = pd.read_csv(p, dtype=str).fillna("")
+    assert len(df) == 40 and df["id"].is_unique
+    assert list(df.columns) == ["id", "text", "category", "silver_urgency", "silver_sentiment", "urgency", "sentiment", "note"]
+    assert (df["urgency"] == "").all()
 
 
 # --- baseline ---------------------------------------------------------------

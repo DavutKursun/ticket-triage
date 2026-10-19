@@ -3,8 +3,9 @@
 Files (all UTF-8):
   data/splits/{train,dev,test}.jsonl   {"id", "text", "category", "intent"}            gold category (Bitext, CDLA-Sharing-1.0)
   data/silver/{dev,test,train}.jsonl   {"id", "urgency", "sentiment", "reason", "model", "prompt_version"}
+  data/silver/train.gpt-oss-120b.jsonl earlier train labels from the Groq free tier (reference only, never loaded)
   data/hard/hard.csv                   id,text,category,urgency,sentiment,language,split   hand-written and hand-labelled
-  data/handcheck/{dev,test}_200.csv    id,text,category,silver_urgency,silver_sentiment,urgency,sentiment,note
+  data/handcheck/{dev,test}_100.csv    id,text,category,silver_urgency,silver_sentiment,urgency,sentiment,note
                                        (Davut fills the last three columns)
 """
 
@@ -108,7 +109,7 @@ def few_shot_examples(per_category: int = 2, seed: int = SEED) -> list[tuple[str
 
 
 def write_handcheck_template(name: str, n: int = 100, seed: int = SEED) -> Path:
-    """A CSV Davut fills by hand: stratified by silver urgency so rare classes get checked."""
+    """A CSV Davut fills by hand: stratified by silver urgency so rare classes get checked; topped up to n."""
     df = labelled(name)
     rng = random.Random(seed)
     per = max(1, n // 4)
@@ -116,7 +117,11 @@ def write_handcheck_template(name: str, n: int = 100, seed: int = SEED) -> Path:
     for u in ("urgent", "high", "medium", "low"):
         g = df[df["urgency"] == u]
         chosen.append(g.sample(min(per, len(g)), random_state=rng.randint(0, 10**6)))
-    sel = pd.concat(chosen).head(n)
+    sel = pd.concat(chosen)
+    if len(sel) < n:  # rare or absent urgency classes: top up from the rest at random
+        rest = df[~df["id"].isin(sel["id"])]
+        sel = pd.concat([sel, rest.sample(min(n - len(sel), len(rest)), random_state=rng.randint(0, 10**6))])
+    sel = sel.head(n)
     HANDCHECK.mkdir(parents=True, exist_ok=True)
     p = HANDCHECK / f"{name}_{n}.csv"
     with p.open("w", newline="", encoding="utf-8") as fh:

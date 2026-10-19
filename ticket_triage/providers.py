@@ -7,7 +7,12 @@
   (LLM_REASONING_EFFORT, default "low") is sent only when non-empty; it cuts hidden reasoning
   tokens for gpt-oss, which otherwise dominate output-token usage on tiny JSON replies.
 * ``AnthropicProvider`` — ``client.messages.parse(output_format=Model)``; optional prompt
-  caching of the system block (``cache=True``) for the few-shot engine.
+  caching of the system block (``cache=True``) for the few-shot engine. No sampling params:
+  Claude Haiku 5.5 rejects non-default temperature; adaptive thinking is on by default.
+* ``with_backoff`` retries transient failures (per-minute 429, 5xx, overload, network) with
+  capped exponential backoff; ``QuotaError`` (daily quota) and other 4xx are never retried.
+* ``max_tokens`` defaults to 1024: Claude's adaptive thinking counts against it and 300 could
+  truncate the JSON.
 
 Both return ``LLMResult(raw_json, input_tokens, output_tokens, cache_read_tokens, model, elapsed)``.
 Network / API errors become ``ProviderError``; ``QuotaError`` (subclass) marks a daily quota
@@ -26,9 +31,23 @@ from pydantic import BaseModel
 
 from .schema import json_schema
 
+TRANSIENT_STATUSES = frozenset({408, 409, 429, 500, 502, 503, 504, 529})
+
 
 class ProviderError(RuntimeError):
-    pass
+    """API or network failure. ``status`` is the HTTP status (None for connection/timeout errors)."""
+
+    def __init__(self, message: str, status: int | None = None, kind: str = "") -> None:
+        super().__init__(message)
+        self.status = status
+        self.kind = kind
+
+    @property
+    def transient(self) -> bool:
+        """Worth retrying: rate limit, server error, overload, or a network/timeout failure."""
+        if self.status is not None:
+            return self.status in TRANSIENT_STATUSES
+        return any(k in self.kind for k in ("Connection", "Timeout"))
 
 
 class QuotaError(ProviderError):
@@ -48,7 +67,7 @@ class LLMResult:
 class Provider(Protocol):
     name: str
 
-    def complete(self, system: str, user: str, model: str, output_model: type[BaseModel], max_tokens: int = 300, cache: bool = False) -> LLMResult: ...
+    def complete(self, system: str, user: str, model: str, output_model: type[BaseModel], max_tokens: int = 1024, cache: bool = False) -> LLMResult: ...
 
 
 def _wrap(exc: Exception) -> ProviderError:
@@ -61,9 +80,34 @@ def _wrap(exc: Exception) -> ProviderError:
         if isinstance(err, dict):
             code = err.get("code") or err.get("type") or ""
     text = f"HTTP {status}{f' ({code})' if code else ''}: {msg}" if status else f"{type(exc).__name__}: {msg}"
+    status = status if isinstance(status, int) else None
     if status == 429 and ("per day" in msg.lower() or "tpd" in msg.lower() or "daily" in msg.lower()):
-        return QuotaError(text)
-    return ProviderError(text)
+        return QuotaError(text, status, type(exc).__name__)
+    return ProviderError(text, status, type(exc).__name__)
+
+
+def with_backoff(fn, *, max_total_wait: float = 1800.0, first_sleep: float = 5.0, max_sleep: float = 120.0, log=print, sleep=time.sleep):
+    """Call ``fn()``; on a transient ProviderError wait (5s, 10s, ... capped at ``max_sleep``) and retry.
+
+    Never retries QuotaError (daily quota → caller stops for the day) or non-transient errors (401, 400, ...).
+    Gives up and re-raises once ``max_total_wait`` seconds have been spent waiting: a per-minute limit
+    clears within a minute, so 30 minutes of continuous failure means something else is wrong.
+    """
+    waited = 0.0
+    attempt = 0
+    while True:
+        try:
+            return fn()
+        except QuotaError:
+            raise
+        except ProviderError as e:
+            if not e.transient or waited >= max_total_wait:
+                raise
+            attempt += 1
+            pause = min(max_sleep, first_sleep * 2 ** (attempt - 1))
+            waited += pause
+            log(f"  transient API error ({str(e)[:100]}) — retry {attempt} in {pause:.0f}s")
+            sleep(pause)
 
 
 class OpenAICompatProvider:
@@ -80,7 +124,7 @@ class OpenAICompatProvider:
         self._use_schema = os.environ.get("USE_JSON_SCHEMA", "0") == "1"
         self._reasoning_effort = (reasoning_effort or "").strip()
 
-    def complete(self, system: str, user: str, model: str, output_model: type[BaseModel], max_tokens: int = 300, cache: bool = False) -> LLMResult:
+    def complete(self, system: str, user: str, model: str, output_model: type[BaseModel], max_tokens: int = 1024, cache: bool = False) -> LLMResult:
         messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
         if self._use_schema:
             fmt = {"type": "json_schema", "json_schema": {"name": output_model.__name__.lower(), "schema": json_schema(output_model), "strict": True}}
@@ -118,7 +162,8 @@ class AnthropicProvider:
             client = anthropic.Anthropic(api_key=api_key)
         self._client = client
 
-    def complete(self, system: str, user: str, model: str, output_model: type[BaseModel], max_tokens: int = 300, cache: bool = False) -> LLMResult:
+    def complete(self, system: str, user: str, model: str, output_model: type[BaseModel], max_tokens: int = 1024, cache: bool = False) -> LLMResult:
+        # No temperature/top_p: Claude Haiku 5.5 returns 400 for non-default sampling params.
         sys_block: list[dict] = [{"type": "text", "text": system}]
         if cache:
             sys_block[0]["cache_control"] = {"type": "ephemeral"}

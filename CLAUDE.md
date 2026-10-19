@@ -4,39 +4,52 @@ This file is the build spec. Read it fully before writing code. Work milestone b
 milestone; after each milestone stop, show how to run it, and wait for Davut's OK.
 Section 0 says where we are and what changed from the original plan.
 
-## 0. Status (updated 2026-10-11)
+## 0. Status (updated 2026-10-19)
 
-**Starter is implemented and tested (16 tests, no network). Start at Milestone 1, step 0 below.**
+**Milestone 1 is 2/3 done (21 tests, no network): dataset built, 1,980 silver labels done, hand-check templates
+written. Next is M1 3/3 — Davut's 200-row hand-check and the 300-message hard set (see "Next" below).**
 
-Deviations from the original spec — all because Davut uses **no paid API**:
-- LLM engine (A/B) and silver labelling run on **Groq free tier** (`openai/gpt-oss-120b`, OpenAI-compatible,
-  JSON mode + Pydantic + one repair retry). Claude stays an optional provider (`LLM_PROVIDER=anthropic`,
-  `messages.parse`, prompt caching). The README cost table quotes list prices for `claude-haiku-5-5`
-  ("as if") from measured tokens; the free tier is labelled "free tier", never "$0.0000".
-- No Batch API. `scripts/label_silver.py` is sequential, resumable (appends JSONL, skips done ids), and exits 3 on
-  Groq's daily quota (200k tokens/day) so it can continue the next day. Silver set reduced from 4,000 to
-  **2,000 messages (1,000 dev + 1,000 test)** plus a 24-row train pool for few-shot examples.
-- Groq's quota is shared with docs-chat and invoice-to-sheet: do not run API scripts for two projects on the same day
-  without checking with Davut.
+Deviations from the original spec:
+- Silver labels come from **`claude-haiku-5-5`** (`LLM_PROVIDER=anthropic`, `messages.parse` + Pydantic, one repair
+  retry), not Sonnet and not the Batch API: `scripts/label_silver.py` is sequential and resumable (appends JSONL,
+  skips done ids), retries transient 429/5xx/network errors with capped backoff (`providers.with_backoff`) and exits
+  3 on a daily quota. The 1,980 rows cost ≈$0.25 at list price (≈864 input / 84 output tokens per call, 0 repairs).
+- Silver set is **1,980 messages = 990 train + 495 dev + 495 test** (equal per category; `--n 1000/500/500` rounds
+  down to a multiple of 11). Train silver labels feed the baseline / fine-tuned urgency+sentiment heads and the
+  few-shot pool. Hand-check files: `data/handcheck/{dev,test}_100.csv`, stratified by silver urgency, topped up to 100.
+- Groq free tier (`openai/gpt-oss-120b`, `LLM_PROVIDER=openai_compat`, `LLM_REASONING_EFFORT=low`) was the labeller
+  until 2026-10-16; its 939 train labels are kept in `data/silver/train.gpt-oss-120b.jsonl` (never loaded) as a
+  cross-labeller check: vs Haiku, urgency agreement 0.82 (κ 0.54), sentiment 0.95 (κ 0.71). Groq's quota is shared
+  with docs-chat and invoice-to-sheet: do not run API scripts for two projects on the same day without checking
+  with Davut.
+- The README cost table quotes list prices for `claude-haiku-5-5` from measured tokens; a free-tier model is
+  labelled "free tier", never "$0.0000".
 - Model IDs verified 2026-10-09: `claude-haiku-5-5` ($0.10/$0.50 per MTok), `claude-sonnet-5-5` ($2/$10). Never
   downgrade to older IDs without asking.
+- Labels are skewed because Bitext is templated: across 1,980 rows there are 0 `urgent` and 1 `positive`
+  (urgency ≈73% low / 22% medium / 7% high; sentiment ≈89% neutral). The hard set must supply those classes.
 
 Implemented:
-- `ticket_triage/config.py`, `schema.py` (Triage / SilverLabel / TriageResponse, 11 categories — build_dataset.py
-  asserts they match the dataset), `rubric.py` (versioned prompts, urgency + sentiment rubric, few-shot block),
-  `providers.py` (OpenAICompatProvider, AnthropicProvider, QuotaError, complete_validated with one repair),
-  `llm_engine.py` (zero/few-shot, budget guard), `baseline.py` (TF-IDF word+char + logreg, one model per task),
-  `costs.py` (prices, batch/cache math, BudgetGuard), `data.py` (splits, silver, hard set, hand-check templates)
-- `scripts/build_dataset.py`, `label_silver.py`, `agreement.py` (accuracy + kappa), `draft_hard.py`, `train_baseline.py`
-- `tests/test_core.py` (FakeProvider), CI, Makefile, requirements split (core / full / dev / train)
+- `ticket_triage/config.py` (incl. `LLM_REASONING_EFFORT`), `schema.py` (Triage / SilverLabel / TriageResponse,
+  11 categories — build_dataset.py asserts they match the dataset), `rubric.py` (versioned prompts, urgency +
+  sentiment rubric, few-shot block), `providers.py` (OpenAICompatProvider with `reasoning_effort`, AnthropicProvider,
+  QuotaError, `with_backoff`, `complete_validated` with one repair; `max_tokens` 1024 so Claude's adaptive thinking
+  never truncates the JSON), `llm_engine.py` (zero/few-shot, budget guard), `baseline.py` (TF-IDF word+char + logreg,
+  one model per task), `costs.py` (prices, batch/cache math, BudgetGuard), `data.py` (splits, silver, hard set,
+  hand-check templates)
+- `scripts/build_dataset.py`, `label_silver.py`, `agreement.py` (accuracy + kappa, `--make-templates`),
+  `draft_hard.py`, `train_baseline.py`
+- Data: `data/splits/` (24,554 deduplicated rows: 19,639 train / 2,455 dev / 2,460 test),
+  `data/silver/{train,dev,test}.jsonl` (990 / 495 / 495, prompt 2026-10-11.2), `data/handcheck/{dev,test}_100.csv`
+- `tests/test_core.py` (21 tests: FakeProvider, fake OpenAI client, backoff, hand-check template), CI, Makefile,
+  requirements split (core / full / dev / train)
 - NOT yet: `ft_engine.py`, `scripts/train.py`, `export_onnx.py`, `eval.py`, `bench_latency.py`, notebook, FastAPI
   routes, Gradio, Dockerfile.
 
-**Milestone 1, step 0 (do first):** `pip install -r requirements-dev.txt`, `pytest -q`, then
-`python scripts/build_dataset.py`. If it exits 2 (category mismatch), update `CATEGORIES` in schema.py and
-`CATEGORY_DEFINITIONS` in rubric.py to the dataset's actual set and rerun. Report the per-category × split table.
-Then `python scripts/label_silver.py --split train --n 24 --limit 24` as a smoke test of the provider (24 calls),
-report tokens used, repair rate and 5 sample labels with reasons. Stop.
+**Next (M1 3/3):** Davut fills `urgency`, `sentiment` (and optionally `note`) in `data/handcheck/dev_100.csv` and
+`test_100.csv` without looking at the silver columns, then `python scripts/agreement.py` (target κ ≥ 0.75 per task;
+below that, refine the rubric once, bump `PROMPT_VERSION`, relabel). Hard set: `python scripts/draft_hard.py`, then
+Davut edits and labels 300 messages into `data/hard/hard.csv`. Then M2 (LLM engines + baseline, eval on dev only).
 
 macOS notes: Python 3.11 venv; torch is only needed for M3 (Kaggle) — do not install requirements-train.txt locally.
 
