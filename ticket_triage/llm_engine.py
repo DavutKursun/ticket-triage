@@ -31,6 +31,10 @@ class LLMCall:
         return sum(r.cache_read_tokens for r in self.results)
 
     @property
+    def cache_write_tokens(self) -> int:
+        return sum(r.cache_write_tokens for r in self.results)
+
+    @property
     def elapsed(self) -> float:
         return sum(r.elapsed_seconds for r in self.results)
 
@@ -66,7 +70,7 @@ class LLMEngine:
         user = TRIAGE_INSTRUCTION.format(text=text)
         obj, results, repaired = complete_validated(self.provider, self.system, user, self.model, Triage, cache=(self.mode == "few"))
         if self.budget is not None:
-            self.budget.record(sum(cost_usd(self.model, r.input_tokens, r.output_tokens) for r in results))
+            self.budget.record(sum(cost_usd(self.model, r.input_tokens, r.output_tokens, r.cache_read_tokens, r.cache_write_tokens) for r in results))
         return LLMCall(obj, results, repaired)
 
     def respond(self, text: str) -> TriageResponse:

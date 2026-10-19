@@ -1,0 +1,74 @@
+{
+  "engine": "llm_few",
+  "split": "dev",
+  "n": 495,
+  "n_failed": 0,
+  "timestamp": "2026-10-19T05:41:11+00:00",
+  "category": {
+    "accuracy": 0.9879,
+    "macro_f1": 0.9878,
+    "labels_scored": [
+      "account",
+      "cancel",
+      "contact",
+      "delivery",
+      "feedback",
+      "invoice",
+      "order",
+      "payment",
+      "refund",
+      "shipping",
+      "subscription"
+    ]
+  },
+  "urgency": {
+    "accuracy": 0.8283,
+    "macro_f1": 0.7209,
+    "labels_scored": [
+      "high",
+      "low",
+      "medium"
+    ]
+  },
+  "sentiment": {
+    "accuracy": 0.9091,
+    "macro_f1": 0.7752,
+    "labels_scored": [
+      "negative",
+      "neutral"
+    ]
+  },
+  "latency_ms": {
+    "p50": 1035.0,
+    "p95": 1588.1,
+    "mean": 1125.3
+  },
+  "model": "claude-haiku-5-5",
+  "prompt_version": "2026-10-11.2",
+  "mode": "few",
+  "cache_control": true,
+  "delay_s": 0.5,
+  "tokens": {
+    "per_call": {
+      "input": 2212.2,
+      "output": 42.8,
+      "cache_read": 2126.7,
+      "cache_write": 4.3
+    },
+    "total_input": 1095042,
+    "total_output": 21195,
+    "total_cache_read": 1052714,
+    "total_cache_write": 2131,
+    "repaired": 0,
+    "calls": 495
+  },
+  "measured_cost_usd": 0.0254,
+  "cost_per_1000_usd": {
+    "sync_no_cache": 0.2426,
+    "sync_cached": 0.0513,
+    "batch_no_cache": 0.1213,
+    "batch_cached": 0.0257,
+    "priced": true
+  },
+  "cache_hit_rate": 0.998
+}

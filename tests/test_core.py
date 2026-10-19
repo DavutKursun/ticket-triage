@@ -138,6 +138,20 @@ def test_anthropic_validation_error_is_repaired_not_wrapped():
     assert repaired and obj.urgency == "low" and len(results) == 1 and calls["n"] == 3
 
 
+def test_anthropic_usage_reports_total_prompt_and_cache_split():
+    from types import SimpleNamespace as NS
+
+    from ticket_triage.providers import AnthropicProvider
+
+    def parse(**kwargs):
+        assert kwargs["system"][0].get("cache_control") == {"type": "ephemeral"}
+        return NS(parsed_output=SilverLabel(urgency="low", sentiment="neutral", reason="ok"), content=[],
+                  usage=NS(input_tokens=100, output_tokens=7, cache_read_input_tokens=400, cache_creation_input_tokens=50))
+
+    r = AnthropicProvider("k", client=NS(messages=NS(parse=parse))).complete("s", "u", "m", SilverLabel, cache=True)
+    assert (r.input_tokens, r.cache_read_tokens, r.cache_write_tokens, r.output_tokens) == (550, 400, 50, 7)
+
+
 def _fake_openai_client(record: list):
     """Minimal stand-in for openai.OpenAI: records create() kwargs, returns a JSON reply with usage."""
     from types import SimpleNamespace as NS
@@ -212,7 +226,11 @@ def test_costs():
     assert sync == pytest.approx((600 * 0.10 + 40 * 0.50) / 1e6 * 1000)
     assert cost_per_1000("claude-haiku-5-5", 600, 40, batch=True) == pytest.approx(sync / 2)
     cached = cost_per_1000("claude-haiku-5-5", 600, 40, cached_input_per_call=500)
-    assert cached < sync
+    assert cached == pytest.approx((100 * 0.10 + 500 * 0.10 * 0.1 + 40 * 0.50) / 1e6 * 1000) and cached < sync
+    written = cost_per_1000("claude-haiku-5-5", 600, 40, cache_write_per_call=500)
+    assert written == pytest.approx((100 * 0.10 + 500 * 0.10 * 1.25 + 40 * 0.50) / 1e6 * 1000) and written > sync
+    from ticket_triage.costs import cost_usd
+    assert cost_usd("claude-haiku-5-5", 600, 40) == pytest.approx(sync / 1000)
     assert cost_per_1000("free", 600, 40) == 0.0
 
 

@@ -14,7 +14,9 @@
 * ``max_tokens`` defaults to 1024: Claude's adaptive thinking counts against it and 300 could
   truncate the JSON.
 
-Both return ``LLMResult(raw_json, input_tokens, output_tokens, cache_read_tokens, model, elapsed)``.
+Both return ``LLMResult(raw_json, input_tokens, output_tokens, cache_read_tokens, model, elapsed, cache_write_tokens)``
+where ``input_tokens`` is the TOTAL prompt size (Anthropic reports the uncached remainder only, so cache reads and
+writes are added back) and the cache fields are the subsets billed at 0.1× / 1.25×.
 Network / API errors become ``ProviderError``; ``QuotaError`` (subclass) marks a daily quota
 exhaustion so batch scripts can stop and resume tomorrow.
 """
@@ -62,6 +64,7 @@ class LLMResult:
     cache_read_tokens: int
     model: str
     elapsed_seconds: float
+    cache_write_tokens: int = 0
 
 
 class Provider(Protocol):
@@ -182,7 +185,9 @@ class AnthropicProvider:
         raw = parsed.model_dump_json() if parsed is not None else next((b.text for b in resp.content if getattr(b, "type", "") == "text"), "")
         u = resp.usage
         cached = int(getattr(u, "cache_read_input_tokens", 0) or 0)
-        return LLMResult(raw, u.input_tokens, u.output_tokens, cached, model, elapsed)
+        written = int(getattr(u, "cache_creation_input_tokens", 0) or 0)
+        # usage.input_tokens is the uncached remainder only; report the full prompt like the OpenAI-compat path does
+        return LLMResult(raw, int(u.input_tokens) + cached + written, u.output_tokens, cached, model, elapsed, written)
 
 
 def get_provider(cfg) -> tuple[Provider, str]:

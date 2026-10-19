@@ -1,0 +1,54 @@
+{
+  "engine": "baseline",
+  "split": "dev",
+  "n": 495,
+  "n_failed": 0,
+  "timestamp": "2026-10-19T05:41:12+00:00",
+  "category": {
+    "accuracy": 1.0,
+    "macro_f1": 1.0,
+    "labels_scored": [
+      "account",
+      "cancel",
+      "contact",
+      "delivery",
+      "feedback",
+      "invoice",
+      "order",
+      "payment",
+      "refund",
+      "shipping",
+      "subscription"
+    ]
+  },
+  "urgency": {
+    "accuracy": 0.7838,
+    "macro_f1": 0.6763,
+    "labels_scored": [
+      "high",
+      "low",
+      "medium"
+    ]
+  },
+  "sentiment": {
+    "accuracy": 0.9475,
+    "macro_f1": 0.8711,
+    "labels_scored": [
+      "negative",
+      "neutral"
+    ]
+  },
+  "latency_ms": {
+    "p50": 2.7,
+    "p95": 2.9,
+    "mean": 2.7
+  },
+  "model": "tfidf_logreg",
+  "cost_per_1000_usd": {
+    "sync_no_cache": 0.0,
+    "sync_cached": 0.0,
+    "batch_no_cache": 0.0,
+    "batch_cached": 0.0,
+    "priced": false
+  }
+}

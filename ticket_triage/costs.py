@@ -23,13 +23,16 @@ CACHE_READ_MULTIPLIER = 0.1   # prompt-cache read tokens cost 10% of input price
 CACHE_WRITE_MULTIPLIER = 1.25
 
 
-def cost_per_1000(model: str, input_tokens_per_call: float, output_tokens_per_call: float, cached_input_per_call: float = 0.0, batch: bool = False) -> float:
-    """USD per 1,000 tickets at list prices; 0 for free-tier models."""
+def cost_per_1000(model: str, input_tokens_per_call: float, output_tokens_per_call: float, cached_input_per_call: float = 0.0,
+                  batch: bool = False, cache_write_per_call: float = 0.0) -> float:
+    """USD per 1,000 tickets at list prices; 0 for free-tier models. ``input_tokens_per_call`` is the TOTAL prompt;
+    the cached (0.1×) and cache-write (1.25×) parts are subsets of it."""
     if model not in PRICES_PER_MTOK:
         return 0.0
     i, o = PRICES_PER_MTOK[model]
-    uncached = max(input_tokens_per_call - cached_input_per_call, 0.0)
-    per_call = (uncached * i + cached_input_per_call * i * CACHE_READ_MULTIPLIER + output_tokens_per_call * o) / 1_000_000
+    uncached = max(input_tokens_per_call - cached_input_per_call - cache_write_per_call, 0.0)
+    per_call = (uncached * i + cached_input_per_call * i * CACHE_READ_MULTIPLIER + cache_write_per_call * i * CACHE_WRITE_MULTIPLIER
+                + output_tokens_per_call * o) / 1_000_000
     if batch:
         per_call *= BATCH_DISCOUNT
     return per_call * 1000
@@ -44,11 +47,9 @@ def is_priced(model: str) -> bool:
     return model in PRICES_PER_MTOK
 
 
-def cost_usd(model: str, input_tokens: int, output_tokens: int) -> float:
-    if model not in PRICES_PER_MTOK:
-        return 0.0
-    i, o = PRICES_PER_MTOK[model]
-    return (input_tokens * i + output_tokens * o) / 1_000_000
+def cost_usd(model: str, input_tokens: int, output_tokens: int, cache_read_tokens: int = 0, cache_write_tokens: int = 0) -> float:
+    """Measured cost of calls at list prices (input_tokens = total prompt; cache fields are subsets of it)."""
+    return cost_per_1000(model, input_tokens, output_tokens, cache_read_tokens, False, cache_write_tokens) / 1000
 
 
 def format_cost(model: str, usd: float) -> str:

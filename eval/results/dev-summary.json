@@ -1,0 +1,204 @@
+[
+  {
+    "engine": "llm_zero",
+    "split": "dev",
+    "n": 495,
+    "n_failed": 0,
+    "timestamp": "2026-10-19T05:27:44+00:00",
+    "category": {
+      "accuracy": 0.9859,
+      "macro_f1": 0.9857,
+      "labels_scored": [
+        "account",
+        "cancel",
+        "contact",
+        "delivery",
+        "feedback",
+        "invoice",
+        "order",
+        "payment",
+        "refund",
+        "shipping",
+        "subscription"
+      ]
+    },
+    "urgency": {
+      "accuracy": 0.8121,
+      "macro_f1": 0.6587,
+      "labels_scored": [
+        "high",
+        "low",
+        "medium"
+      ]
+    },
+    "sentiment": {
+      "accuracy": 0.9535,
+      "macro_f1": 0.8833,
+      "labels_scored": [
+        "negative",
+        "neutral"
+      ]
+    },
+    "latency_ms": {
+      "p50": 1304.9,
+      "p95": 2078.8,
+      "mean": 1335.3
+    },
+    "model": "claude-haiku-5-5",
+    "prompt_version": "2026-10-11.2",
+    "mode": "zero",
+    "cache_control": false,
+    "delay_s": 0.5,
+    "tokens": {
+      "per_call": {
+        "input": 1358.2,
+        "output": 77.2,
+        "cache_read": 0.0,
+        "cache_write": 0.0
+      },
+      "total_input": 672312,
+      "total_output": 38194,
+      "total_cache_read": 0,
+      "total_cache_write": 0,
+      "repaired": 0,
+      "calls": 495
+    },
+    "measured_cost_usd": 0.0863,
+    "cost_per_1000_usd": {
+      "sync_no_cache": 0.1744,
+      "sync_cached": 0.1744,
+      "batch_no_cache": 0.0872,
+      "batch_cached": 0.0872,
+      "priced": true
+    },
+    "cache_hit_rate": 0.0
+  },
+  {
+    "engine": "llm_few",
+    "split": "dev",
+    "n": 495,
+    "n_failed": 0,
+    "timestamp": "2026-10-19T05:41:11+00:00",
+    "category": {
+      "accuracy": 0.9879,
+      "macro_f1": 0.9878,
+      "labels_scored": [
+        "account",
+        "cancel",
+        "contact",
+        "delivery",
+        "feedback",
+        "invoice",
+        "order",
+        "payment",
+        "refund",
+        "shipping",
+        "subscription"
+      ]
+    },
+    "urgency": {
+      "accuracy": 0.8283,
+      "macro_f1": 0.7209,
+      "labels_scored": [
+        "high",
+        "low",
+        "medium"
+      ]
+    },
+    "sentiment": {
+      "accuracy": 0.9091,
+      "macro_f1": 0.7752,
+      "labels_scored": [
+        "negative",
+        "neutral"
+      ]
+    },
+    "latency_ms": {
+      "p50": 1035.0,
+      "p95": 1588.1,
+      "mean": 1125.3
+    },
+    "model": "claude-haiku-5-5",
+    "prompt_version": "2026-10-11.2",
+    "mode": "few",
+    "cache_control": true,
+    "delay_s": 0.5,
+    "tokens": {
+      "per_call": {
+        "input": 2212.2,
+        "output": 42.8,
+        "cache_read": 2126.7,
+        "cache_write": 4.3
+      },
+      "total_input": 1095042,
+      "total_output": 21195,
+      "total_cache_read": 1052714,
+      "total_cache_write": 2131,
+      "repaired": 0,
+      "calls": 495
+    },
+    "measured_cost_usd": 0.0254,
+    "cost_per_1000_usd": {
+      "sync_no_cache": 0.2426,
+      "sync_cached": 0.0513,
+      "batch_no_cache": 0.1213,
+      "batch_cached": 0.0257,
+      "priced": true
+    },
+    "cache_hit_rate": 0.998
+  },
+  {
+    "engine": "baseline",
+    "split": "dev",
+    "n": 495,
+    "n_failed": 0,
+    "timestamp": "2026-10-19T05:41:12+00:00",
+    "category": {
+      "accuracy": 1.0,
+      "macro_f1": 1.0,
+      "labels_scored": [
+        "account",
+        "cancel",
+        "contact",
+        "delivery",
+        "feedback",
+        "invoice",
+        "order",
+        "payment",
+        "refund",
+        "shipping",
+        "subscription"
+      ]
+    },
+    "urgency": {
+      "accuracy": 0.7838,
+      "macro_f1": 0.6763,
+      "labels_scored": [
+        "high",
+        "low",
+        "medium"
+      ]
+    },
+    "sentiment": {
+      "accuracy": 0.9475,
+      "macro_f1": 0.8711,
+      "labels_scored": [
+        "negative",
+        "neutral"
+      ]
+    },
+    "latency_ms": {
+      "p50": 2.7,
+      "p95": 2.9,
+      "mean": 2.7
+    },
+    "model": "tfidf_logreg",
+    "cost_per_1000_usd": {
+      "sync_no_cache": 0.0,
+      "sync_cached": 0.0,
+      "batch_no_cache": 0.0,
+      "batch_cached": 0.0,
+      "priced": false
+    }
+  }
+]

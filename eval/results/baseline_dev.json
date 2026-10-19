@@ -1,0 +1,31 @@
+{
+  "train_seconds": 1.7,
+  "model_bytes": 1789988,
+  "n_train_rows": {
+    "category": 19639,
+    "urgency": 990,
+    "sentiment": 990
+  },
+  "dev_silver": {
+    "n": 495,
+    "category": {
+      "accuracy": 1.0,
+      "macro_f1": 1.0
+    },
+    "urgency": {
+      "accuracy": 0.7838,
+      "macro_f1": 0.6763
+    },
+    "sentiment": {
+      "accuracy": 0.9475,
+      "macro_f1": 0.8711
+    }
+  },
+  "dev_full": {
+    "n": 2455,
+    "category": {
+      "accuracy": 0.9992,
+      "macro_f1": 0.9992
+    }
+  }
+}

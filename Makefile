@@ -1,4 +1,4 @@
-.PHONY: setup setup-dev test data silver baseline eval-dry app
+.PHONY: setup setup-dev test data silver baseline eval-dry eval-dev app
 
 PY ?= python
 
@@ -16,5 +16,7 @@ baseline:         ## TF-IDF + logistic regression on dev
 	$(PY) scripts/train_baseline.py
 eval-dry:
 	$(PY) scripts/eval.py --split dev --engines baseline --dry-run
+eval-dev:         ## zero-shot, few-shot (cached) and baseline on the 495 silver-labelled dev rows
+	$(PY) scripts/eval.py --split dev --engines llm_zero,llm_few,baseline --delay 0.5
 app:
 	$(PY) -m uvicorn app:app --port 7860

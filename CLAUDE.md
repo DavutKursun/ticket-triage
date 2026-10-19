@@ -6,9 +6,8 @@ Section 0 says where we are and what changed from the original plan.
 
 ## 0. Status (updated 2026-10-19)
 
-**Milestone 1 is 2/3 done (22 tests, no network): dataset built, 1,980 silver labels done, hand-check templates
-written, 300 hard-set candidates drafted. Next is M1 3/3 — Davut's 200-row hand-check and his edit/label pass over
-the hard set (see "Next" below).**
+**Milestone 2 is done on dev (23 tests, no network). Milestone 1's last third (Davut's 200-row hand-check and his
+edit/label pass over the 300 hard-set candidates) runs in parallel. Next is M3, the Kaggle fine-tune (see "Next").**
 
 Deviations from the original spec:
 - Silver labels come from **`claude-haiku-5-5`** (`LLM_PROVIDER=anthropic`, `messages.parse` + Pydantic, one repair
@@ -23,6 +22,8 @@ Deviations from the original spec:
   cross-labeller check: vs Haiku, urgency agreement 0.82 (κ 0.54), sentiment 0.95 (κ 0.71). Groq's quota is shared
   with docs-chat and invoice-to-sheet: do not run API scripts for two projects on the same day without checking
   with Davut.
+- LLM engines A/B run on whatever `LLM_PROVIDER` selects — currently `claude-haiku-5-5`, as the original spec
+  intended; the M2 dev numbers are Haiku's. Few-shot uses `cache_control` on the system block (2.1k tokens).
 - The README cost table quotes list prices for `claude-haiku-5-5` from measured tokens; a free-tier model is
   labelled "free tier", never "$0.0000".
 - Model IDs verified 2026-10-09: `claude-haiku-5-5` ($0.10/$0.50 per MTok), `claude-sonnet-5-5` ($2/$10). Never
@@ -40,22 +41,31 @@ Implemented:
   hand-check templates)
 - `scripts/build_dataset.py`, `label_silver.py`, `agreement.py` (accuracy + kappa, `--make-templates`),
   `draft_hard.py` (quota-driven plan: category/urgency/sentiment/language/sentences/second issue/typos fixed per
-  ticket, 10 tickets per call, `with_backoff`, resumable), `train_baseline.py`
+  ticket, 10 tickets per call, `with_backoff`, resumable), `train_baseline.py` (timing, size, dev metrics),
+  `eval.py` (resumable per-engine predictions, macro-F1 over classes present in the truth, p50/p95, $/1,000
+  sync · cached · batch; refuses `--split test` until `data/hard/hard.csv` exists and `--final` is passed)
+- M2 dev results (495 silver rows, `eval/results/dev-summary.md`, README table): baseline category 1.000 /
+  urgency F1 0.676 / sentiment F1 0.871 / 3 ms; zero-shot 0.986 / 0.659 / 0.883 / 1.3 s p50 / $0.17 per 1,000;
+  few-shot 0.988 / 0.721 / 0.775 / 1.0 s / $0.24 sync → $0.05 cached (99.8% hits). 990 calls, $0.11, 0 repairs.
 - Data: `data/splits/` (24,554 deduplicated rows: 19,639 train / 2,455 dev / 2,460 test),
   `data/silver/{train,dev,test}.jsonl` (990 / 495 / 495, prompt 2026-10-11.2), `data/handcheck/{dev,test}_100.csv`,
   `data/hard/hard_draft.csv` (300 candidates: 48 urgent, 36 positive, 60 Turkish, 90 two-issue, 75 with typos,
   2–6 sentences, ≈$0.07) + `data/hard/REVIEW.md`
-- `tests/test_core.py` (22 tests: FakeProvider, fake OpenAI client, backoff, Anthropic validation→repair,
-  hand-check template), CI, Makefile,
+- `tests/test_core.py` (23 tests: FakeProvider, fake OpenAI client, backoff, Anthropic validation→repair, cache
+  accounting, hand-check template), CI, Makefile,
   requirements split (core / full / dev / train)
-- NOT yet: `ft_engine.py`, `scripts/train.py`, `export_onnx.py`, `eval.py`, `bench_latency.py`, notebook, FastAPI
-  routes, Gradio, Dockerfile.
+- NOT yet: `ft_engine.py`, `scripts/train.py`, `export_onnx.py`, `bench_latency.py`, notebook, FastAPI routes,
+  Gradio, Dockerfile.
 
-**Next (M1 3/3):** Davut fills `urgency`, `sentiment` (and optionally `note`) in `data/handcheck/dev_100.csv` and
-`test_100.csv` without looking at the silver columns, then `python scripts/agreement.py` (target κ ≥ 0.75 per task;
-below that, refine the rubric once, bump `PROMPT_VERSION`, relabel). Hard set: Davut edits and labels the 300
-candidates in `data/hard/hard_draft.csv` following `data/hard/REVIEW.md` and saves `data/hard/hard.csv`. Then M2
-(LLM engines + baseline, eval on dev only).
+**Next (M3, Kaggle fine-tune):** `notebooks/train_kaggle.ipynb` + `scripts/train.py` sharing one module:
+`xlm-roberta-base`, three heads, loss = sum of cross-entropies with a mask for rows that have no silver label
+(category gold on all 19,639 train rows; urgency/sentiment silver on 990), 3 epochs, early stopping on dev macro-F1
+(the 495 silver dev rows), then `export_onnx.py` (int8 dynamic quantisation via optimum), `ft_engine.py`,
+`bench_latency.py`, model + card on Davut's Hugging Face account; fall back to three sequential heads if multi-task
+misbehaves. **In parallel (M1 3/3, Davut):** fill `data/handcheck/{dev,test}_100.csv` without looking at the silver
+columns → `python scripts/agreement.py` (target κ ≥ 0.75; below that refine the rubric once, bump `PROMPT_VERSION`,
+relabel); edit/label `data/hard/hard_draft.csv` per `data/hard/REVIEW.md` → `data/hard/hard.csv`. The test split
+and the hard set stay untouched until M4.
 
 macOS notes: Python 3.11 venv; torch is only needed for M3 (Kaggle) — do not install requirements-train.txt locally.
 

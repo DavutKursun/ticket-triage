@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import sys
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -27,11 +28,18 @@ def main() -> int:
         frame = frame.set_index("id")
         frame.loc[silver_train["id"], ["urgency", "sentiment"]] = silver_train.set_index("id")[["urgency", "sentiment"]]
         frame = frame.reset_index()
+    t0 = time.perf_counter()
     eng = BaselineEngine().fit(frame)
-    eng.save()
+    train_s = time.perf_counter() - t0
+    path = eng.save()
+    n_labels = {t: int((frame[t].astype(str).str.len() > 0).sum()) for t in TASKS}
+    report = {"train_seconds": round(train_s, 1), "model_bytes": path.stat().st_size, "n_train_rows": n_labels}
+    print(f"trained in {train_s:.1f}s on {n_labels}; model {path.stat().st_size / 1e6:.1f} MB -> {path}")
 
-    report = {}
-    for name, df in (("dev", labelled("dev") if not labelled("dev").empty else load_split("dev")), ("hard_dev", load_hard("dev"))):
+    dev_silver = labelled("dev")
+    # dev_silver: the 495 silver-labelled rows (all three tasks, same rows the LLM engines are scored on);
+    # dev_full: every dev row, category only (gold labels exist for all of them)
+    for name, df in (("dev_silver", dev_silver), ("dev_full", load_split("dev")), ("hard_dev", load_hard("dev"))):
         if df.empty:
             continue
         pred = eng.predict_frame(df["text"].tolist())
