@@ -113,6 +113,31 @@ def test_with_backoff_retries_transient_only():
     assert slept == [5.0, 10.0]  # gave up once the wait budget was spent
 
 
+def test_anthropic_validation_error_is_repaired_not_wrapped():
+    from types import SimpleNamespace as NS
+
+    from ticket_triage.providers import AnthropicProvider
+
+    try:
+        SilverLabel.model_validate({"urgency": "nope", "sentiment": "neutral"})
+    except ValidationError as e:
+        bad = e
+    calls = {"n": 0}
+
+    def parse(**kwargs):
+        calls["n"] += 1
+        if calls["n"] <= 2:  # the direct call below, then complete_validated's first attempt
+            raise bad  # what the SDK raises on truncated / off-schema JSON
+        return NS(parsed_output=SilverLabel(urgency="low", sentiment="neutral", reason="ok"), content=[],
+                  usage=NS(input_tokens=10, output_tokens=5, cache_read_input_tokens=0))
+
+    p = AnthropicProvider("k", client=NS(messages=NS(parse=parse)))
+    with pytest.raises(ValidationError):  # not a ProviderError: with_backoff must not treat it as an API failure
+        p.complete("s", "u", "m", SilverLabel)
+    obj, results, repaired = complete_validated(p, "s", "u", "m", SilverLabel)
+    assert repaired and obj.urgency == "low" and len(results) == 1 and calls["n"] == 3
+
+
 def _fake_openai_client(record: list):
     """Minimal stand-in for openai.OpenAI: records create() kwargs, returns a JSON reply with usage."""
     from types import SimpleNamespace as NS

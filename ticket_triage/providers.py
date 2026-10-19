@@ -27,7 +27,7 @@ import time
 from dataclasses import dataclass
 from typing import Protocol
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from .schema import json_schema
 
@@ -173,6 +173,8 @@ class AnthropicProvider:
                 model=model, max_tokens=max_tokens, system=sys_block,
                 messages=[{"role": "user", "content": user}], output_format=output_model,
             )
+        except ValidationError:
+            raise  # off-schema or truncated JSON (e.g. max_tokens hit): let complete_validated repair once
         except Exception as exc:
             raise _wrap(exc) from exc
         elapsed = time.perf_counter() - t0
@@ -210,14 +212,16 @@ def parse_json_loose(text: str) -> dict:
         raise
 
 
-def complete_validated(provider: Provider, system: str, user: str, model: str, output_model: type[BaseModel], cache: bool = False):
-    """Call, validate with Pydantic, retry once with the error appended. Returns (obj, results, repaired)."""
-    from pydantic import ValidationError
+def complete_validated(provider: Provider, system: str, user: str, model: str, output_model: type[BaseModel], cache: bool = False, max_tokens: int = 1024):
+    """Call, validate with Pydantic, retry once with the error appended. Returns (obj, results, repaired).
 
-    results = [provider.complete(system, user, model, output_model, cache=cache)]
+    A ValidationError raised by the provider itself (Anthropic parse) counts as a failed first attempt too.
+    """
+    results: list[LLMResult] = []
     try:
+        results.append(provider.complete(system, user, model, output_model, max_tokens=max_tokens, cache=cache))
         return output_model.model_validate(parse_json_loose(results[0].raw_json)), results, False
     except (ValidationError, ValueError) as first:
         fix = f"{user}\n\nYour previous answer was invalid: {str(first)[:400]}\nReturn only the corrected JSON object."
-        results.append(provider.complete(system, fix, model, output_model, cache=cache))
-        return output_model.model_validate(parse_json_loose(results[1].raw_json)), results, True
+        results.append(provider.complete(system, fix, model, output_model, max_tokens=max_tokens, cache=cache))
+        return output_model.model_validate(parse_json_loose(results[-1].raw_json)), results, True

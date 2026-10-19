@@ -6,8 +6,9 @@ Section 0 says where we are and what changed from the original plan.
 
 ## 0. Status (updated 2026-10-19)
 
-**Milestone 1 is 2/3 done (21 tests, no network): dataset built, 1,980 silver labels done, hand-check templates
-written. Next is M1 3/3 — Davut's 200-row hand-check and the 300-message hard set (see "Next" below).**
+**Milestone 1 is 2/3 done (22 tests, no network): dataset built, 1,980 silver labels done, hand-check templates
+written, 300 hard-set candidates drafted. Next is M1 3/3 — Davut's 200-row hand-check and his edit/label pass over
+the hard set (see "Next" below).**
 
 Deviations from the original spec:
 - Silver labels come from **`claude-haiku-5-5`** (`LLM_PROVIDER=anthropic`, `messages.parse` + Pydantic, one repair
@@ -38,18 +39,23 @@ Implemented:
   one model per task), `costs.py` (prices, batch/cache math, BudgetGuard), `data.py` (splits, silver, hard set,
   hand-check templates)
 - `scripts/build_dataset.py`, `label_silver.py`, `agreement.py` (accuracy + kappa, `--make-templates`),
-  `draft_hard.py`, `train_baseline.py`
+  `draft_hard.py` (quota-driven plan: category/urgency/sentiment/language/sentences/second issue/typos fixed per
+  ticket, 10 tickets per call, `with_backoff`, resumable), `train_baseline.py`
 - Data: `data/splits/` (24,554 deduplicated rows: 19,639 train / 2,455 dev / 2,460 test),
-  `data/silver/{train,dev,test}.jsonl` (990 / 495 / 495, prompt 2026-10-11.2), `data/handcheck/{dev,test}_100.csv`
-- `tests/test_core.py` (21 tests: FakeProvider, fake OpenAI client, backoff, hand-check template), CI, Makefile,
+  `data/silver/{train,dev,test}.jsonl` (990 / 495 / 495, prompt 2026-10-11.2), `data/handcheck/{dev,test}_100.csv`,
+  `data/hard/hard_draft.csv` (300 candidates: 48 urgent, 36 positive, 60 Turkish, 90 two-issue, 75 with typos,
+  2–6 sentences, ≈$0.07) + `data/hard/REVIEW.md`
+- `tests/test_core.py` (22 tests: FakeProvider, fake OpenAI client, backoff, Anthropic validation→repair,
+  hand-check template), CI, Makefile,
   requirements split (core / full / dev / train)
 - NOT yet: `ft_engine.py`, `scripts/train.py`, `export_onnx.py`, `eval.py`, `bench_latency.py`, notebook, FastAPI
   routes, Gradio, Dockerfile.
 
 **Next (M1 3/3):** Davut fills `urgency`, `sentiment` (and optionally `note`) in `data/handcheck/dev_100.csv` and
 `test_100.csv` without looking at the silver columns, then `python scripts/agreement.py` (target κ ≥ 0.75 per task;
-below that, refine the rubric once, bump `PROMPT_VERSION`, relabel). Hard set: `python scripts/draft_hard.py`, then
-Davut edits and labels 300 messages into `data/hard/hard.csv`. Then M2 (LLM engines + baseline, eval on dev only).
+below that, refine the rubric once, bump `PROMPT_VERSION`, relabel). Hard set: Davut edits and labels the 300
+candidates in `data/hard/hard_draft.csv` following `data/hard/REVIEW.md` and saves `data/hard/hard.csv`. Then M2
+(LLM engines + baseline, eval on dev only).
 
 macOS notes: Python 3.11 venv; torch is only needed for M3 (Kaggle) — do not install requirements-train.txt locally.
 
